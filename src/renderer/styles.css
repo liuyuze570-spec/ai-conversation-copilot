@@ -1,0 +1,200 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  /* 单一强调色的 RGB，供需要 rgba 的地方复用（不要在组件里再写死颜色）。 */
+  --accent-rgb: 109, 139, 255;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  /* Opaque on purpose: the window itself is opaque (transparent surfaces
+     render invisibly without GPU compositing). */
+  background: #0b0e14;
+}
+
+body {
+  font-family: 'Segoe UI Variable Display', 'Segoe UI', Inter, system-ui, -apple-system,
+    'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+/* Drag region for the frameless overlay window. */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+@layer components {
+  /**
+   * 表面与分区。
+   *
+   * 层级只走三档，靠「底色差 + 一条 hairline」表达深度，不靠描边堆叠。
+   * 以前每个组件各写各的 border-white/5 + bg-white/[0.03]，结果既不一致也
+   * 看不出层级 —— 这是「不够高级」最大的来源。
+   */
+  .surface {
+    @apply rounded-2xl border border-line-soft bg-ink-850;
+  }
+  .surface-raised {
+    @apply rounded-2xl border border-line bg-ink-800 shadow-lift;
+  }
+  .hairline {
+    @apply border-line-soft;
+  }
+
+  .chip {
+    @apply rounded-full px-2 py-[2px] text-[11px] font-medium tracking-[0.01em];
+  }
+
+  /** 段落小标题：大写 + 字距，中文场景只加字距，避免「挤在一起」。 */
+  .label {
+    @apply text-[10px] font-medium tracking-[0.06em] text-white/35;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl text-[12px] font-medium
+      transition-[background-color,border-color,color,transform] duration-150
+      active:scale-[0.98] disabled:pointer-events-none disabled:opacity-35;
+  }
+  .btn-ghost {
+    @apply btn border border-line bg-white/[0.03] px-2.5 py-1.5 text-white/65
+      hover:border-line-strong hover:bg-white/[0.07] hover:text-white;
+  }
+  .btn-primary {
+    @apply btn border border-transparent bg-accent px-3 py-2 font-semibold text-white
+      hover:bg-accent-dim;
+  }
+  .btn-danger {
+    @apply btn border border-line bg-white/[0.03] px-2.5 py-1.5 text-white/55
+      hover:border-danger/40 hover:bg-danger/12 hover:text-danger;
+  }
+
+  /** 场景 / 语气 选择器的分段项。 */
+  .seg {
+    @apply shrink-0 whitespace-nowrap rounded-full px-2.5 py-[3px] text-[10.5px] font-medium
+      text-white/45 transition-colors duration-150 hover:bg-white/[0.07] hover:text-white/80;
+  }
+  .seg-on {
+    @apply bg-accent/20 text-accent-soft;
+  }
+
+  /** 数字对齐：轮次、时长、电平这些地方必须等宽，否则会左右跳。 */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /**
+   * 右侧渐隐。
+   *
+   * 悬浮窗只有 460px 宽，语气、风格这类横排选项必然溢出。直接截断会在右边缘
+   * 出现半截字，看起来像没做完；加一层渐隐，溢出就变成了「还能往右滑」的暗示。
+   */
+  .fade-r {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent 100%);
+  }
+}
+
+.glass-panel {
+  background: #11151d;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.7);
+}
+
+.subtle-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.subtle-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+.subtle-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+  background-clip: content-box;
+}
+.subtle-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/**
+ * 键盘焦点：必须一眼看得见。
+ *
+ * 旧规则只管原生 button/input/select，而界面里大量控件是自绘的
+ * （`div[role="switch"]`、`button[data-value]` 的下拉触发器、滑块包装层），
+ * 这些元素按 Tab 走到时没有任何视觉反馈 —— 键盘用户等于在黑暗里找路。
+ *
+ * 另外两处必须注意：
+ * 1. 很多输入框写了 Tailwind 的 `focus:outline-none`，它的选择器权重
+ *    （类 + 伪类）高于 `input:focus-visible`，会把这个 outline 吃掉。
+ *    所以这里同时给 box-shadow：那条不会被覆盖。
+ * 2. 用 `:focus-visible` 而不是 `:focus`，否则鼠标点一下也留一圈框。
+ */
+:is(button, input, select, textarea, a, [role='switch'], [role='tab'], [tabindex]):focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.85);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.16);
+}
+
+/**
+ * 原生控件跟着强调色走。
+ *
+ * 滑块、勾选框不设这个的话会用系统默认的蓝色，在靛紫主题里明显是「外来物」，
+ * 一眼就掉质感。
+ */
+input[type='range'],
+input[type='checkbox'],
+progress {
+  accent-color: #6d8bff;
+}
+
+input[type='range'] {
+  height: 4px;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+ * 高对比模式：真的换底色，不只是「理论上算出来好看」
+ *
+ * 之前只在文档里写了「高对比 = 纯白压纯黑」，界面其实还是 #0b0e14 的深灰底
+ * 加上半透明白字 —— 那算出来的 21:1 是纸面数字，用户看到的并不是它。
+ * 这里把底色、面板、卡片全部压到纯黑，正文颜色在原组件里已经是纯白/近纯白。
+ * -------------------------------------------------------------------------- */
+[data-contrast='high'] {
+  background: #000 !important;
+}
+
+[data-contrast='high'] [data-subtitle-list] {
+  background: #000 !important;
+}
+
+[data-contrast='high'] [data-source-bar] {
+  background: #000 !important;
+  border-bottom-color: #fff !important;
+}
+
+/* 高对比下淡化/半透明的文字一律提亮：灰字在纯黑上仍然读不清。 */
+[data-contrast='high'] [data-subtitle-original],
+[data-contrast='high'] [data-subtitle-pron],
+[data-contrast='high'] [data-translation-state='ok'] {
+  color: #fff !important;
+  opacity: 1 !important;
+}
+
+[data-contrast='high'] [data-subtitle-item] {
+  background: transparent !important;
+}

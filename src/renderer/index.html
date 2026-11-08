@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      CSP 说明：
+      · media-src 必须放过 data: —— 云端朗读是把 mp3 以 base64 data URL 交给
+        <audio> 播的（主进程持有 Key，只把音频字节回传）。原来的
+        `default-src 'self'` 会把 data: 当成非法来源，音频直接 error，
+        表现就是「点了播放没有任何声音、也不报错」。
+      · 只开 data:，不开 https: / * —— 渲染层不需要从外网取任何媒体。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' data:; img-src 'self' data:"
+    />
+    <title>AI Conversation Copilot</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

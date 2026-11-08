@@ -1,0 +1,25 @@
+# 运行后端所需（版本 = 本机实测跑通的版本，2026-11-08）
+fastapi==0.162.2
+uvicorn==0.54.0
+python-multipart==0.0.33
+httpx==0.28.1
+pydantic==2.14.3
+
+# 本地语音识别（真实识别）。av 必须钉在 13.x：
+# faster-whisper 调 av.open(..., metadata_errors="ignore")，av 19 没有这个参数。
+faster-whisper==1.2.1
+ctranslate2==4.8.5
+av==13.1.0
+huggingface-hub==2.4.0
+
+# 本地英译中（真实翻译，进程内 ONNX 推理，不需要 Node）
+# 模型文件在 webapp/mt/models/Xenova/opus-mt-en-zh，不在包管理里。
+onnxruntime==1.31.1
+tokenizers==0.23.3
+numpy==2.5.4
+
+# 说明：
+# - onnx 只用于排查模型结构（查看计算图），运行时不需要，可不装。
+# - pywin32 只在 Windows 上用 SAPI 生成测试音频（make_test_audio.py），部署镜像不装。
+# - 不再需要 Argos：语言包索引在 GitHub，本机网络不可达。
+# - Node 边车（webapp/mt/server.mjs）是可选的对照实现，公开部署不依赖它。

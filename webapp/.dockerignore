@@ -1,0 +1,16 @@
+# 构建上下文里排掉这些，否则会把 1GB 的依赖目录塞进构建缓存
+mt/node_modules
+server/.venv
+server/testdata
+server/_tts.py
+server/make_test_audio.py
+server/test_mt_onnx.py
+server/.api.log
+server/.mt.log
+server/models/**/.cache
+e2e
+web/node_modules
+web/src
+**/__pycache__
+**/*.pyc
+deploy

@@ -1,0 +1,65 @@
+{
+  "when": "2026-11-08T22:13:55",
+  "host": {
+    "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+    "logical_cpus": 32,
+    "python": "3.12.14"
+  },
+  "guard": "socket 层拦截所有非回环出站连接（connect / connect_ex / getaddrinfo）",
+  "asr": {
+    "available": true,
+    "detail": "本地 faster-whisper（faster-whisper-base，加载 316ms）",
+    "load_ms": 316
+  },
+  "mt": {
+    "available": true,
+    "detail": "本地 Opus-MT（进程内 ONNX 量化，107MB，不需要 Node）",
+    "load_ms": 814,
+    "startup_ms": 1433
+  },
+  "blocked_attempts": [],
+  "note": "两条音频由本机 SAPI 合成，句子未出现在任何预置样例里",
+  "startup_ms": 596,
+  "cases": [
+    {
+      "audio": "o1-platform.wav",
+      "bytes": 170884,
+      "expected_source": "The train leaves at seven forty-five from platform two.",
+      "asr": {
+        "mode": "local-whisper",
+        "text": "The train leaves at 745 from platform 2.",
+        "language": "en",
+        "audio_seconds": 3.8739375,
+        "elapsed_ms": 824,
+        "wall_ms": 826
+      },
+      "mt": {
+        "mode": "local-onnx",
+        "translation": "列车从2号平台745出发",
+        "elapsed_ms": 530,
+        "wall_ms": 530
+      }
+    },
+    {
+      "audio": "o2-notlater.wav",
+      "bytes": 247384,
+      "expected_source": "The delivery is not on Friday. It will arrive next Monday at 9 a.m.",
+      "asr": {
+        "mode": "local-whisper",
+        "text": "The delivery is not on Friday. It will arrive next Monday at 9 a.m.",
+        "language": "en",
+        "audio_seconds": 5.608625,
+        "elapsed_ms": 773,
+        "wall_ms": 775
+      },
+      "mt": {
+        "mode": "local-onnx",
+        "translation": "星期五不送货,下星期一上午9时到",
+        "elapsed_ms": 722,
+        "wall_ms": 722
+      }
+    }
+  ],
+  "blocked_count": 0,
+  "peak_memory_mb": 874.4
+}

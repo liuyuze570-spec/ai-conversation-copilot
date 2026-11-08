@@ -1,0 +1,1512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>新手教程 · 照着点，5 分钟连上免费的 AI</title>
+<style>
+  :root {
+    --ink: #171b26;
+    --ink-soft: #48505f;
+    --ink-mute: #8a92a3;
+    --line: #e3e7ef;
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --blue: #2f52e0;
+    --blue-dark: #1f3bad;
+    --blue-soft: #eef2ff;
+    --green: #0f7a54;
+    --green-soft: #e7f7f0;
+    --green-line: #b9e5d3;
+    --amber: #965c00;
+    --amber-soft: #fff5e0;
+    --amber-line: #f0d9a6;
+    --red: #b3342a;
+    --red-soft: #fdecea;
+    --red-line: #f3c5c0;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 96px; }
+  body {
+    margin: 0;
+    padding: 0 16px 90px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.85;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  a { color: var(--blue); }
+
+  /* ---------- 封面 ---------- */
+  header.hero {
+    margin: 0 -16px 0;
+    padding: 44px 24px 38px;
+    background: linear-gradient(142deg, #2f52e0 0%, #4a76f0 52%, #7fa3ff 100%);
+    color: #fff;
+  }
+  .hero .kicker {
+    display: inline-block;
+    font-size: 14px;
+    letter-spacing: 2px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 999px;
+    padding: 5px 15px;
+    margin-bottom: 18px;
+  }
+  .hero h1 { margin: 0 0 14px; font-size: 36px; line-height: 1.32; letter-spacing: 0.4px; }
+  .hero h1 small { display: block; font-size: 20px; font-weight: 400; opacity: 0.92; margin-top: 10px; }
+  .hero p { margin: 0; font-size: 17.5px; opacity: 0.95; max-width: 680px; }
+  .hero-meta { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .hero-meta span {
+    background: rgba(255, 255, 255, 0.17);
+    border-radius: 10px;
+    padding: 6px 13px;
+    font-size: 14.5px;
+  }
+
+  /* ---------- 一句话版 ---------- */
+  .oneline {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 6px solid var(--green);
+    border-radius: 14px;
+    padding: 18px 22px;
+    margin: -26px 0 26px;
+    position: relative;
+    box-shadow: 0 8px 24px rgba(23, 27, 38, 0.06);
+    font-size: 17px;
+  }
+  .oneline b { color: var(--green); }
+  .oneline .chain { display: block; margin-top: 8px; font-size: 18.5px; color: var(--ink); }
+
+  /* ---------- 顶部导航 ---------- */
+  nav.toc {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    margin: 0 -16px 30px;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+    padding: 9px 16px;
+  }
+  nav.toc .inner { max-width: 900px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 7px; }
+  nav.toc a {
+    flex: 0 0 auto;
+    text-decoration: none;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 999px;
+    padding: 5px 13px;
+    white-space: nowrap;
+  }
+  nav.toc a:hover { border-color: var(--blue); color: var(--blue); }
+  nav.toc a.hot { background: var(--green-soft); border-color: var(--green-line); color: var(--green); font-weight: 700; }
+
+  /* ---------- 标题 ---------- */
+  h2 {
+    font-size: 25px;
+    margin: 52px 0 8px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--line);
+    line-height: 1.4;
+  }
+  h2 .num {
+    display: inline-grid;
+    place-items: center;
+    width: 36px; height: 36px;
+    margin-right: 11px;
+    border-radius: 50%;
+    background: var(--blue);
+    color: #fff;
+    font-size: 17px;
+    vertical-align: 3px;
+  }
+  h2 .sub { display: block; font-size: 15.5px; font-weight: 400; color: var(--ink-mute); margin-top: 4px; }
+  h3 { font-size: 19px; margin: 28px 0 8px; }
+  h4 { font-size: 16.5px; margin: 20px 0 6px; color: var(--ink); }
+  p { margin: 10px 0; color: var(--ink-soft); }
+  p.lead { color: var(--ink); font-size: 17.5px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px 22px;
+    margin: 18px 0;
+  }
+
+  /* ---------- 三步走：(点哪里 / 会看到 / 没看到怎么办) ---------- */
+  .stepline { margin: 10px 0 4px; }
+  .stepline .lab {
+    display: inline-block;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    border-radius: 6px;
+    padding: 1px 8px;
+    margin-right: 7px;
+    vertical-align: 2px;
+  }
+  .lab.where { background: var(--blue-soft); color: var(--blue-dark); }
+  .lab.see { background: var(--green-soft); color: var(--green); }
+  .lab.nope { background: var(--amber-soft); color: var(--amber); }
+
+  /* ---------- 编号步骤 ---------- */
+  ol.steps { padding-left: 0; list-style: none; margin: 16px 0; counter-reset: step; }
+  ol.steps > li {
+    position: relative;
+    padding: 14px 0 14px 56px;
+    border-bottom: 1px dashed var(--line);
+    counter-increment: step;
+    color: var(--ink-soft);
+  }
+  ol.steps > li:last-child { border-bottom: none; }
+  ol.steps > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0; top: 14px;
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    background: var(--blue-soft);
+    color: var(--blue-dark);
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 15.5px;
+  }
+  ol.steps b { color: var(--ink); }
+  ol.steps .done { display: block; color: var(--green); font-size: 15.5px; margin-top: 5px; }
+
+  /* ---------- 网址 / 按钮名 ---------- */
+  .key {
+    font-family: Consolas, "Courier New", monospace;
+    background: #eef1f7;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1px 7px;
+    font-size: 15.5px;
+    color: #223052;
+    word-break: break-all;
+  }
+  a.key { text-decoration: none; border-bottom: 1px solid #b9c6ee; }
+  a.key:hover { background: var(--blue-soft); }
+  .btn-name {
+    display: inline-block;
+    background: #222a3a;
+    color: #fff;
+    border-radius: 7px;
+    padding: 1px 10px;
+    font-size: 15.5px;
+    font-weight: 700;
+    vertical-align: 1px;
+  }
+
+  /* ---------- 提示框 ---------- */
+  .box { border-radius: 12px; padding: 15px 18px; margin: 16px 0; font-size: 16.5px; }
+  .box .tag { font-weight: 700; display: block; margin-bottom: 4px; }
+  .box.tip { background: var(--green-soft); border: 1px solid var(--green-line); color: #0a5b40; }
+  .box.warn { background: var(--amber-soft); border: 1px solid var(--amber-line); color: #744700; }
+  .box.danger { background: var(--red-soft); border: 1px solid var(--red-line); color: #8b271d; }
+  .box.note { background: var(--blue-soft); border: 1px solid #cfd9ff; color: #22379a; }
+
+  /* ---------- 三张路线卡 ---------- */
+  .routes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin: 20px 0; }
+  .route {
+    background: #fff;
+    border: 2px solid var(--line);
+    border-radius: 16px;
+    padding: 18px 20px;
+    position: relative;
+  }
+  .route.best { border-color: var(--green); box-shadow: 0 6px 20px rgba(15, 122, 84, 0.1); }
+  .route .ribbon {
+    position: absolute; top: -13px; right: 16px;
+    background: var(--green); color: #fff;
+    font-size: 13px; font-weight: 700;
+    border-radius: 999px; padding: 2px 12px;
+  }
+  .route h3 { margin: 0 0 4px; font-size: 19px; }
+  .route .who { font-size: 14px; color: var(--ink-mute); margin-bottom: 10px; }
+  .route ul { padding-left: 20px; margin: 8px 0 0; color: var(--ink-soft); font-size: 15.5px; }
+  .route ul li { margin: 4px 0; }
+  .route .cost { display: inline-block; margin-top: 10px; font-size: 14.5px; font-weight: 700; color: var(--green); }
+
+  /* ---------- 表格 ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 15.5px; }
+  th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
+  th { background: #f0f3fa; font-size: 15px; color: var(--ink); }
+  td { color: var(--ink-soft); background: #fff; }
+  td.mono { font-family: Consolas, monospace; font-size: 13.5px; word-break: break-all; }
+  tr.hi td { background: #f4fcf8; }
+
+  .pill { display: inline-block; border-radius: 999px; padding: 0 10px; font-size: 13px; white-space: nowrap; }
+  .pill.free { background: var(--green-soft); color: var(--green); border: 1px solid var(--green-line); }
+  .pill.paid { background: #f2f4f9; color: var(--ink-mute); border: 1px solid var(--line); }
+  .pill.need { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber-line); }
+  .pill.ok { background: var(--blue-soft); color: var(--blue-dark); border: 1px solid #cfd9ff; }
+
+  /* ---------- 软件界面示意 ---------- */
+  .ui-mock {
+    border: 1px solid #2b3244;
+    background: #151a25;
+    border-radius: 14px;
+    padding: 14px;
+    margin: 18px 0;
+    color: #dfe4ee;
+    font-size: 14px;
+  }
+  .ui-mock .bar { display: flex; align-items: center; gap: 7px; padding-bottom: 10px; border-bottom: 1px solid #2b3244; }
+  .ui-mock .bar .dot { width: 9px; height: 9px; border-radius: 50%; background: #4a5468; }
+  .ui-mock .bar .name { font-size: 12.5px; color: #8e99ad; margin-left: 4px; }
+  .ui-mock .tabs { display: flex; gap: 8px; margin: 12px 0; }
+  .ui-mock .tab { border: 1px solid #39415a; border-radius: 8px; padding: 5px 12px; font-size: 13px; color: #a7b1c4; }
+  .ui-mock .tab.on { background: #2a3550; border-color: #4c69c8; color: #dbe4ff; font-weight: 700; }
+  .ui-mock .sec { border: 1px solid #2b3244; border-radius: 10px; padding: 10px 12px; margin: 9px 0; background: #1a2030; }
+  .ui-mock .sec .st { font-size: 12.5px; color: #98a3b8; margin-bottom: 7px; }
+  .ui-mock .fake-input {
+    border: 1px solid #39415a; border-radius: 7px; background: #111620;
+    padding: 6px 9px; font-size: 12.5px; color: #6d778c;
+  }
+  .ui-mock .fake-row { display: flex; gap: 8px; align-items: center; }
+  .ui-mock .fake-btn {
+    border-radius: 7px; padding: 4px 12px; font-size: 12.5px; white-space: nowrap;
+    background: #2a3550; border: 1px solid #4c69c8; color: #cfdcff;
+  }
+  .ui-mock .fake-btn.primary { background: #3558d6; border-color: #3558d6; color: #fff; font-weight: 700; }
+  .ui-mock .tap {
+    position: relative;
+    outline: 2px dashed #ffb547;
+    outline-offset: 3px;
+    border-radius: 7px;
+  }
+  .ui-mock .tap::after {
+    content: "点这里";
+    position: absolute;
+    top: -22px; left: 50%;
+    transform: translateX(-50%);
+    background: #ffb547;
+    color: #3a2500;
+    font-size: 11.5px;
+    font-weight: 700;
+    border-radius: 5px;
+    padding: 0 7px;
+    white-space: nowrap;
+  }
+
+  /* ---------- 网页示意 ---------- */
+  .web-mock {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 16px 0;
+    background: #fff;
+    box-shadow: 0 4px 16px rgba(23, 27, 38, 0.06);
+  }
+  .web-mock .bar {
+    display: flex; align-items: center; gap: 6px;
+    background: #eef1f7;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .web-mock .bar i { width: 10px; height: 10px; border-radius: 50%; background: #cdd4e2; display: block; }
+  .web-mock .bar .url {
+    flex: 1;
+    background: #fff;
+    border-radius: 999px;
+    padding: 2px 12px;
+    font-size: 12.5px;
+    color: var(--ink-mute);
+    font-family: Consolas, monospace;
+    margin-left: 8px;
+  }
+  .web-mock .page { padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .web-mock .page .logo { font-weight: 700; font-size: 15px; color: var(--ink); }
+  .web-mock .page .logo span { color: var(--ink-mute); font-weight: 400; font-size: 13px; display: block; }
+  .web-mock .site-btn {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 5px 14px;
+    font-size: 14px;
+    color: var(--ink-soft);
+    background: #fff;
+  }
+  .web-mock .site-btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 700; }
+  .web-mock .page .tap {
+    position: relative;
+    outline: 2px dashed #ff9f1a;
+    outline-offset: 3px;
+  }
+  .web-mock .page .tap::after {
+    content: "点这里";
+    position: absolute;
+    top: -24px; left: 50%;
+    transform: translateX(-50%);
+    background: #ff9f1a; color: #3a2500;
+    font-size: 11.5px; font-weight: 700;
+    border-radius: 5px; padding: 0 7px;
+    white-space: nowrap;
+  }
+
+  /* ---------- 服务商索引 ---------- */
+  .index-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 9px; margin: 16px 0 22px; }
+  .index-grid a {
+    display: block;
+    text-decoration: none;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    padding: 10px 13px;
+    color: var(--ink);
+    font-size: 15.5px;
+    font-weight: 700;
+    line-height: 1.5;
+  }
+  .index-grid a:hover { border-color: var(--blue); background: #f7f9ff; }
+  .index-grid a small { display: block; font-weight: 400; font-size: 13px; color: var(--ink-mute); margin-top: 1px; }
+  .index-grid a .n {
+    display: inline-block;
+    min-width: 19px;
+    height: 19px;
+    margin-right: 6px;
+    border-radius: 6px;
+    background: var(--blue-soft);
+    color: var(--blue-dark);
+    font-size: 12.5px;
+    text-align: center;
+    line-height: 19px;
+  }
+
+  /* ---------- 服务商章节 ---------- */
+  .provider {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 0 0 18px;
+    margin: 22px 0;
+    overflow: hidden;
+    scroll-margin-top: 86px;
+  }
+  .provider > .head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 16px 20px;
+    background: linear-gradient(100deg, #f3f6ff, #fbfcff);
+    border-bottom: 1px solid var(--line);
+  }
+  .provider > .head .idx {
+    display: grid; place-items: center;
+    width: 32px; height: 32px;
+    border-radius: 9px;
+    background: var(--blue);
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+    flex: 0 0 auto;
+  }
+  .provider > .head h3 { margin: 0; font-size: 21px; }
+  .provider > .head .tags { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+  .provider > .body { padding: 4px 20px 0; }
+  .kv { display: grid; grid-template-columns: 96px 1fr; gap: 6px 12px; margin: 14px 0; font-size: 16px; }
+  .kv dt { color: var(--ink-mute); font-size: 15px; padding-top: 1px; }
+  .kv dd { margin: 0; color: var(--ink-soft); }
+
+  /* ---------- 红黑榜 ---------- */
+  .rank { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin: 18px 0; }
+  .rank .col { border-radius: 14px; padding: 16px 18px; }
+  .rank .good { background: var(--green-soft); border: 1px solid var(--green-line); }
+  .rank .bad { background: var(--red-soft); border: 1px solid var(--red-line); }
+  .rank h4 { margin: 0 0 8px; font-size: 17px; }
+  .rank .good h4 { color: var(--green); }
+  .rank .bad h4 { color: var(--red); }
+  .rank ul { margin: 0; padding-left: 20px; font-size: 15.5px; }
+  .rank li { margin: 5px 0; color: #3c4452; }
+  .rank code { font-family: Consolas, monospace; font-size: 14px; background: rgba(255,255,255,0.7); padding: 0 4px; border-radius: 4px; }
+
+  /* ---------- 流程条 ---------- */
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+  .flow div {
+    flex: 1 1 118px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 8px;
+    text-align: center;
+    font-size: 14.5px;
+    color: var(--ink-soft);
+  }
+  .flow div b { display: block; color: var(--blue); font-size: 16px; margin-bottom: 3px; }
+
+  /* ---------- 清单 ---------- */
+  .checklist { list-style: none; padding: 0; margin: 14px 0; }
+  .checklist li {
+    padding: 10px 14px 10px 46px;
+    position: relative;
+    border-bottom: 1px dashed var(--line);
+    color: var(--ink-soft);
+  }
+  .checklist li::before {
+    content: "";
+    position: absolute; left: 12px; top: 15px;
+    width: 18px; height: 18px;
+    border: 2px solid #b9c0cf;
+    border-radius: 5px;
+  }
+
+  details {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 18px;
+    margin: 10px 0;
+  }
+  details[open] { border-color: #cfd9ff; }
+  summary { cursor: pointer; font-weight: 700; color: var(--ink); font-size: 17px; }
+  summary::marker { color: var(--blue); }
+  details p { margin-top: 10px; }
+
+  footer {
+    margin-top: 56px;
+    padding-top: 20px;
+    border-top: 2px solid var(--line);
+    color: var(--ink-mute);
+    font-size: 14.5px;
+  }
+
+  @media print {
+    body { background: #fff; font-size: 11.5pt; }
+    nav.toc { display: none; }
+    header.hero { background: #2f52e0 !important; -webkit-print-color-adjust: exact; }
+    .provider, .card, .route, .ui-mock, .web-mock { break-inside: avoid; }
+    details:not([open]) { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="kicker">新手图文教程 · 一步一步照着点</span>
+    <h1>照着点，5 分钟连上免费的 AI
+      <small>不需要懂电脑，不需要会英语，不需要花一分钱</small>
+    </h1>
+    <p>整件事只有两个动作：<b>在网页上复制一串字符</b>，<b>在软件里粘贴</b>。和你平时复制一个网址发到微信里，是一模一样的操作。</p>
+    <div class="hero-meta">
+      <span>⏱ 约 5 分钟</span>
+      <span>💰 0 元起步</span>
+      <span>🇨🇳 只连国内网站</span>
+      <span>🔒 Key 只存在你自己电脑里</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="oneline">
+    <b>先看这一句就够了：</b>去下面任意一家网站注册 → 点「创建密钥」→ 复制那串字 → 回软件粘贴 → 点「测试连接」。
+    <span class="chain">装 Key 就像配一把家门钥匙：钥匙去店里免费领，领完插进锁里就能用。</span>
+  </div>
+
+  <nav class="toc">
+    <div class="inner">
+      <a href="#words">① 三个词</a>
+      <a href="#choose" class="hot">② 选哪家（免费）</a>
+      <a href="#app">③ 软件怎么点</a>
+      <a href="#providers" class="hot">④ 各家领 Key 教程</a>
+      <a href="#freelist">⑤ 免费名单</a>
+      <a href="#test">⑥ 测试 + 开听</a>
+      <a href="#pay">⑦ 什么时候要花钱</a>
+      <a href="#errors">⑧ 报错对照</a>
+      <a href="#faq">⑨ 常见疑问</a>
+    </div>
+  </nav>
+
+  <!-- ======================= 0 ======================= -->
+  <h2><span class="num">0</span>先记住这条路线
+    <span class="sub">从头到尾就这 6 下，下面的长篇只是把每一步拆开讲。</span>
+  </h2>
+  <div class="flow">
+    <div><b>① 开网页</b>选一家（推荐硅基流动）</div>
+    <div><b>② 注册</b>手机号 + 短信码</div>
+    <div><b>③ 创建密钥</b>点一下就生成</div>
+    <div><b>④ 复制</b>sk- 开头那串</div>
+    <div><b>⑤ 粘进软件</b>粘贴 + 保存</div>
+    <div><b>⑥ 测试</b>看到绿色就成了</div>
+  </div>
+
+  <!-- ======================= 1 ======================= -->
+  <h2 id="words"><span class="num">1</span>三个词，30 秒看懂
+    <span class="sub">看懂这三个词，后面所有页面你都读得懂。</span>
+  </h2>
+  <table>
+    <tr>
+      <th style="width:22%">你会看到这个词</th>
+      <th style="width:30%">它其实是什么</th>
+      <th>你要做的事</th>
+    </tr>
+    <tr>
+      <td><b>API Key</b><br />（也叫「密钥」「令牌」「Token」）</td>
+      <td>一把<b>钥匙</b>。一串 <span class="key">sk-</span> 开头的乱码。</td>
+      <td>去网站免费领一把，复制进软件。<b>整个教程 90% 的篇幅都在讲这件事。</b></td>
+    </tr>
+    <tr>
+      <td><b>模型</b><br />（Model）</td>
+      <td>会说话的<b>大脑</b>。不同大脑有聪明和快速的差别。</td>
+      <td>软件里用下拉框选一个。<b>名字旁写「免费」的不花钱</b>，新手就选这个。</td>
+    </tr>
+    <tr>
+      <td><b>服务商</b><br />（也叫「平台」「开放平台」）</td>
+      <td>卖大脑的<b>商店</b>。你要去商店里领钥匙。</td>
+      <td>从下面三家免费的里挑一家。<b>新手直接用「硅基流动」，一把钥匙连字幕都管。</b></td>
+    </tr>
+  </table>
+  <div class="box note">
+    <span class="tag">为什么只让连国内的网站？</span>
+    <b>① 连得上：</b>国外接口在国内经常直接连不通，要多装一堆东西，还老断。<br />
+    <b>② 更安全：</b>你电脑里的声音、看的电影、说的话，不会发到境外去。<br />
+    <b>③ 更省钱：</b>国内这几家的免费额度比国外大得多，普通人够用几个月。<br />
+    所以软件会主动挡住国外地址 —— <b>这是故意设计的保护，不是坏了。</b>
+  </div>
+
+  <!-- ======================= 2 ======================= -->
+  <h2 id="choose"><span class="num">2</span>第二步：先选一家（<span style="color:var(--green)">从免费的用起</span>）
+    <span class="sub">先别充钱。下面三条路线任选一条，都不用花钱。</span>
+  </h2>
+
+  <div class="routes">
+    <div class="route best">
+      <span class="ribbon">最省事 · 推荐</span>
+      <h3>路线 A：硅基流动</h3>
+      <div class="who">适合：所有人，尤其是「我不想弄两次」的人</div>
+      <ul>
+        <li><b>一把钥匙同时管两件事</b>：文字回复 + 语音字幕</li>
+        <li>有一批 <b>¥0 的模型</b>长期免费，够日常用</li>
+        <li>注册只要手机号</li>
+      </ul>
+      <span class="cost">预估花费：0 元</span>
+    </div>
+
+    <div class="route">
+      <h3>路线 B：智谱 + 魔搭</h3>
+      <div class="who">适合：想尽量不花钱、愿意多领一把钥匙的人</div>
+      <ul>
+        <li>智谱的 <span class="key">glm-4-flash</span> <b>免费、额度较宽</b>（以官网当前政策为准）</li>
+        <li>但智谱<b>不做语音识别</b>，字幕得再配一个魔搭的钥匙</li>
+        <li>等于领两把钥匙，多花 2 分钟</li>
+      </ul>
+      <span class="cost">预估花费：0 元</span>
+    </div>
+
+    <div class="route">
+      <h3>路线 C：我已经有 Key</h3>
+      <div class="who">适合：以前用过别的 AI 工具的人</div>
+      <ul>
+        <li>直接跳到第 3 步，在软件里粘贴</li>
+        <li>选对「服务商」和「地址」，不然会报错</li>
+        <li>不知道自己手里是哪家的，看第 8 章对照表</li>
+      </ul>
+      <span class="cost">直接跳到第 3 章 ↓</span>
+    </div>
+  </div>
+
+  <h3>九家国内服务商，一张表看清区别</h3>
+  <table>
+    <tr>
+      <th style="width:19%">服务商</th>
+      <th style="width:13%">免费程度</th>
+      <th style="width:13%">能出字幕吗</th>
+      <th style="width:14%">注册难度</th>
+      <th>一句话点评</th>
+    </tr>
+    <tr class="hi">
+      <td><b>硅基流动</b> <span class="pill free">推荐</span></td>
+      <td><span class="pill free">有 ¥0 模型</span></td>
+      <td><span class="pill ok">能</span></td>
+      <td>很简单</td>
+      <td>一把钥匙全搞定，新手首选。</td>
+    </tr>
+    <tr>
+      <td><b>智谱 AI</b></td>
+      <td><span class="pill free">有免费模型</span></td>
+      <td><span class="pill need">要另配</span></td>
+      <td>最简单</td>
+      <td>glm-4-flash 免费额度较宽，中文很自然。</td>
+    </tr>
+    <tr>
+      <td><b>魔搭 ModelScope</b></td>
+      <td><span class="pill free">每天额度</span></td>
+      <td><span class="pill ok">能</span></td>
+      <td>要绑阿里云</td>
+      <td>阿里旗下，每天刷新额度，适合当字幕的后备。</td>
+    </tr>
+    <tr>
+      <td><b>阿里云百炼</b></td>
+      <td><span class="pill free">新人有额度</span></td>
+      <td><span class="pill ok">能</span></td>
+      <td>要实名</td>
+      <td>大厂官方，模型最全，也支持语音识别。</td>
+    </tr>
+    <tr>
+      <td><b>火山方舟（豆包）</b></td>
+      <td><span class="pill free">每天额度</span></td>
+      <td><span class="pill need">要另配</span></td>
+      <td>偏麻烦</td>
+      <td>每天送额度，但要先手动「开通模型」，新手容易卡。</td>
+    </tr>
+    <tr>
+      <td><b>深度求索 DeepSeek</b></td>
+      <td><span class="pill paid">要充值</span></td>
+      <td><span class="pill need">要另配</span></td>
+      <td>简单</td>
+      <td>没有免费额度，但便宜到 10 元用很久。</td>
+    </tr>
+    <tr>
+      <td><b>月之暗面 Kimi</b></td>
+      <td><span class="pill paid">赠送额度</span></td>
+      <td><span class="pill need">要另配</span></td>
+      <td>简单</td>
+      <td>长文强，用来接话稍显重。</td>
+    </tr>
+    <tr>
+      <td><b>腾讯混元</b></td>
+      <td><span class="pill free">lite 免费</span></td>
+      <td><span class="pill need">要另配</span></td>
+      <td>要实名</td>
+      <td>腾讯官方，hunyuan-lite 免费。</td>
+    </tr>
+    <tr>
+      <td><b>阶跃星辰 StepFun</b></td>
+      <td><span class="pill paid">赠送额度</span></td>
+      <td><span class="pill need">要另配</span></td>
+      <td>简单</td>
+      <td>接口标准，备用可选。</td>
+    </tr>
+  </table>
+
+  <div class="box warn">
+    <span class="tag">看「能出字幕吗」这一列</span>
+    这个软件的<b>字幕</b>要靠「语音识别」能力，而<b>大部分服务商只做文字、不做语音</b>。
+    所以：<b>选硅基流动 / 魔搭 / 阿里云百炼</b>，一把钥匙就够；
+    选了别家，软件会提示你「还缺语音识别的 Key」，点一下
+    <span class="btn-name">用 硅基流动 做语音识别（免费）</span> 就好，不用自己纠结。
+  </div>
+
+  <!-- ======================= 3 ======================= -->
+  <h2 id="app"><span class="num">3</span>第三步：在软件里点这 4 下
+    <span class="sub">不管选哪家，软件里的操作都一模一样。</span>
+  </h2>
+
+  <p class="lead">下面这张图就是你要找的地方，先在软件里找到它，再去领钥匙。</p>
+
+  <div class="ui-mock">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="name">AI 对话副驾驶</span></div>
+    <div class="tabs">
+      <span class="tab">常用功能</span>
+      <span class="tab on tap">API 功能</span>
+    </div>
+    <div class="sec">
+      <div class="st">这里显示连接状态</div>
+      <div class="fake-row">
+        <span class="fake-btn primary tap">测试连接</span>
+        <span class="fake-btn">图文教程（新手必看）</span>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="st">第 1 步 · 选一家国内模型服务商</div>
+      <div class="fake-input">硅基流动 SiliconFlow（推荐）  ▾</div>
+    </div>
+    <div class="sec">
+      <div class="st">第 2 步 · 粘贴 API Key　　　　已保存</div>
+      <div class="fake-row">
+        <div class="fake-input" style="flex:1">sk-****************************</div>
+        <span class="fake-btn">保存</span>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="st">第 3 步 · 选模型</div>
+      <div class="fake-row">
+        <div class="fake-input" style="flex:1">Qwen2.5-7B（免费 · 接话最快）  ▾</div>
+        <span class="fake-btn">刷新可用模型</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <ol class="steps">
+      <li>点软件<b>右上角的小齿轮 ⚙</b> 打开设置。
+        <span class="done">会看到：设置窗口，顶部有两个按钮。</span></li>
+      <li>点顶部第二个按钮 <span class="btn-name">API 功能</span>。
+        <span class="done">会看到：「第 1 步 · 选一家国内模型服务商」。</span></li>
+      <li>在<b>第 1 步</b>的下拉框里，选你要用的那家（例如「硅基流动」）。
+        <span class="done">会看到：下面自动出现这家的介绍和「怎么申请 Key？」按钮。</span></li>
+      <li>先别急着填 —— 点一下 <span class="btn-name">怎么申请 Key？</span>
+        <span class="done">会看到：浏览器打开本教程，并且<b>直接停在你选的那一家</b>。万一只是停在开头，用下面的「九家服务商索引」点一下就行。</span></li>
+    </ol>
+  </div>
+
+  <div class="box tip">
+    <span class="tag">窗口跑到屏幕外面看不见了？</span>
+    设置 → <span class="btn-name">常用功能</span> → 拉到最下面 → 点 <span class="btn-name">重置窗口位置</span>，窗口就回来了。
+  </div>
+
+  <!-- ======================= 4 ======================= -->
+  <h2 id="providers"><span class="num">4</span>第四步：按你选的那家，照着领钥匙
+    <span class="sub">下面每一家都是「点哪里 → 会看到什么 → 没看到怎么办」。找你的那一家，别家不用看。</span>
+  </h2>
+
+  <div class="box note">
+    <span class="tag">看之前先记住三句通用的</span>
+    ① 网址要<b>自己在浏览器地址栏输入</b>，别在微信里点来路不明的链接。<br />
+    ② 钥匙<b>只完整显示一次</b>，关掉页面就看不到（看不到就再建一个，不影响）。<br />
+    ③ 钥匙<b>不要发给任何人</b>，别人拿到就能花你的额度。
+  </div>
+
+  <h3>九家服务商索引：点你要的那一家</h3>
+  <div class="index-grid">
+    <a href="#provider-siliconflow"><span class="n">1</span>硅基流动<small>有免费模型 · 能做字幕 · 最省事</small></a>
+    <a href="#provider-zhipu"><span class="n">2</span>智谱 AI<small>免费额度宽 · 不做字幕 · 注册最简单</small></a>
+    <a href="#provider-modelscope"><span class="n">3</span>魔搭 ModelScope<small>每天额度 · 能做字幕</small></a>
+    <a href="#provider-dashscope"><span class="n">4</span>阿里云百炼<small>新人额度 · 能做字幕</small></a>
+    <a href="#provider-volces"><span class="n">5</span>火山方舟（豆包）<small>每天额度 · 步骤偏多</small></a>
+    <a href="#provider-deepseek"><span class="n">6</span>DeepSeek<small>要充值 · 便宜</small></a>
+    <a href="#provider-moonshot"><span class="n">7</span>月之暗面 Kimi<small>赠送额度 · 不做字幕</small></a>
+    <a href="#provider-hunyuan"><span class="n">8</span>腾讯混元<small>lite 免费 · 不做字幕</small></a>
+    <a href="#provider-stepfun"><span class="n">9</span>阶跃星辰<small>赠送额度 · 不做字幕</small></a>
+  </div>
+
+  <!-- ---------- 4.1 硅基流动 ---------- -->
+  <section class="provider" id="provider-siliconflow">
+    <div class="head">
+      <span class="idx">1</span>
+      <h3>硅基流动 SiliconFlow <span class="pill free">最省事</span></h3>
+      <div class="tags">
+        <span class="pill free">有 ¥0 模型</span>
+        <span class="pill ok">能做字幕</span>
+        <span class="pill ok">一把钥匙全搞定</span>
+      </div>
+    </div>
+    <div class="body">
+      <p><b>为什么先讲它：</b>它是「模型超市」。文字回复和语音字幕用<b>同一把钥匙</b>，新手少做一半的事。软件里也把它设成了推荐项。</p>
+
+      <dl class="kv">
+        <dt>官网</dt>
+        <dd><a class="key" href="https://cloud.siliconflow.cn/" target="_blank" rel="noreferrer">https://cloud.siliconflow.cn/</a></dd>
+        <dt>领钥匙</dt>
+        <dd><a class="key" href="https://cloud.siliconflow.cn/account/ak" target="_blank" rel="noreferrer">https://cloud.siliconflow.cn/account/ak</a></dd>
+        <dt>要钱吗</dt>
+        <dd>有一批模型标价 ¥0，长期免费；付费模型的单价也很低。</dd>
+      </dl>
+
+      <div class="web-mock">
+        <div class="bar"><i></i><i></i><i></i><div class="url">cloud.siliconflow.cn</div></div>
+        <div class="page">
+          <div class="logo">SiliconFlow<span>模型广场 · 文档 · 价格</span></div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span class="site-btn">模型广场</span>
+            <span class="site-btn primary tap">登录 / 注册</span>
+          </div>
+        </div>
+      </div>
+
+      <ol class="steps">
+        <li>浏览器打开 <a class="key" href="https://cloud.siliconflow.cn/" target="_blank" rel="noreferrer">https://cloud.siliconflow.cn/</a>
+          <span class="done">会看到：首页右上角有「登录 / 注册」。</span></li>
+        <li>点右上角 <span class="btn-name">登录 / 注册</span>，用<b>手机号</b>注册，填短信验证码。
+          <span class="done">会看到：进入控制台首页。</span></li>
+        <li>如果提示要<b>实名认证</b>，跟着填姓名和身份证号（免费，几分钟）。部分免费模型需要认证后才有额度。</li>
+        <li>直接打开 <a class="key" href="https://cloud.siliconflow.cn/account/ak" target="_blank" rel="noreferrer">https://cloud.siliconflow.cn/account/ak</a>
+          （或者：左侧菜单找 <span class="btn-name">API 密钥</span>）。
+          <span class="done">会看到：一张密钥列表，右上角有「新建 API 密钥」。</span></li>
+        <li>点 <span class="btn-name">新建 API 密钥</span>，名字随便填（例如 <span class="key">copilot</span>），确认。
+          <span class="done">会看到：一长串 <span class="key">sk-</span> 开头的字符。</span></li>
+        <li>点旁边的 <b>复制</b> 图标，先粘到记事本里存着。<b>下一步要用。</b></li>
+      </ol>
+
+      <div class="box warn">
+        <span class="tag">这一步最容易卡住的地方</span>
+        <b>① 找不到「API 密钥」菜单</b>：不用找，直接用上面给你的 <span class="key">/account/ak</span> 网址。<br />
+        <b>② 建完关掉页面，钥匙不见了</b>：再建一个新的就行，不需要花钱，也不影响旧的。<br />
+        <b>③ 页面说「余额不足」</b>：说明你选的是<b>付费模型</b>。回软件把模型换成带「免费」字样的。
+      </div>
+
+      <h4>回软件怎么填</h4>
+      <table>
+        <tr><th style="width:30%">软件里的项</th><th>填什么</th></tr>
+        <tr><td>第 1 步 · 服务商</td><td><b>硅基流动 SiliconFlow（推荐）</b></td></tr>
+        <tr><td>第 2 步 · API Key</td><td>粘贴刚才复制的 <span class="key">sk-...</span>，然后点「保存」</td></tr>
+        <tr><td>第 3 步 · 模型</td><td>选 <span class="key">Qwen2.5-7B（免费 · 接话最快）</span>；想中文更稳可选 <span class="key">GLM-4-9B（免费 · 中文稳）</span></td></tr>
+        <tr><td>语音识别（字幕）</td><td><b>不用管</b>。同一家会共用这把钥匙，默认就是免费的 <span class="key">SenseVoiceSmall</span></td></tr>
+      </table>
+      <div class="box tip">
+        <span class="tag">别选带「推理型」的</span>
+        像 <span class="key">Qwen3-8B</span> 这种，回答前会先自己「想」一大段，实测一句话要等 10 秒以上，接不上话。
+        做实时对话就选<b>不带「推理型」字样</b>的那几个。
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- 4.2 智谱 ---------- -->
+  <section class="provider" id="provider-zhipu">
+    <div class="head">
+      <span class="idx">2</span>
+      <h3>智谱 AI GLM <span class="pill free">有免费模型</span></h3>
+      <div class="tags">
+        <span class="pill free">glm-4-flash 免费</span>
+        <span class="pill need">不做字幕</span>
+        <span class="pill ok">注册最简单</span>
+      </div>
+    </div>
+    <div class="body">
+      <p><b>为什么选它：</b><span class="key">glm-4-flash</span> 是<b>免费、额度较宽</b>的（服务商随时可能调整，以官网为准），中文也最像人话。缺点很明确：<b>它不做语音识别</b>，字幕得再配一把钥匙（见下面的「缺口怎么补」）。</p>
+
+      <dl class="kv">
+        <dt>官网</dt>
+        <dd><a class="key" href="https://open.bigmodel.cn/" target="_blank" rel="noreferrer">https://open.bigmodel.cn/</a></dd>
+        <dt>领钥匙</dt>
+        <dd><a class="key" href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank" rel="noreferrer">https://open.bigmodel.cn/usercenter/apikeys</a></dd>
+        <dt>要钱吗</dt>
+        <dd>glm-4-flash / glm-4.7-flash <b>免费</b>；名字里带 plus、air、max 的要钱。</dd>
+      </dl>
+
+      <div class="web-mock">
+        <div class="bar"><i></i><i></i><i></i><div class="url">open.bigmodel.cn</div></div>
+        <div class="page">
+          <div class="logo">智谱开放平台 BIGMODEL<span>GLM 大模型 · 文档 · 价格</span></div>
+          <span class="site-btn primary tap">登录 / 注册</span>
+        </div>
+      </div>
+
+      <ol class="steps">
+        <li>浏览器打开 <a class="key" href="https://open.bigmodel.cn/" target="_blank" rel="noreferrer">https://open.bigmodel.cn/</a>
+          <span class="done">会看到：首页右上角「登录 / 注册」。</span></li>
+        <li>点 <span class="btn-name">登录 / 注册</span>，用手机号 + 短信验证码。<b>30 秒就能完成。</b></li>
+        <li>如果提示<b>实名认证</b>，按提示填（免费）。没实名有些模型不给用。</li>
+        <li>登录后，看左侧菜单，找 <span class="btn-name">API 密钥</span>（有的版本写「API Keys」）。
+          找不到就直接打开 <a class="key" href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank" rel="noreferrer">https://open.bigmodel.cn/usercenter/apikeys</a>
+          <span class="done">会看到：一张密钥列表，上面有「创建新 API Key」。</span></li>
+        <li>点 <span class="btn-name">创建新 API Key</span>，名字随便填，确定。
+          <span class="done">会看到：一串字符，中间可能有个点，点旁边的图标复制。</span></li>
+        <li>粘到记事本存着。这串东西<b>只显示一次</b>。</li>
+      </ol>
+
+      <div class="box warn">
+        <span class="tag">这一步最容易卡住的地方</span>
+        <b>① 找不到密钥页</b>：用上面那个直达网址，别在菜单里绕。<br />
+        <b>② 复制的不是真正的 Key</b>：智谱有时显示成 <span class="key">xxxxx.yyyyy</span>（中间一个英文句点），
+        这也是对的，<b>整串都要复制</b>，别只复制一半。<br />
+        <b>③ 提示「额度不足」</b>：你选到收费模型了。换成 <span class="key">glm-4-flash</span> 或 <span class="key">glm-4.7-flash</span>。
+      </div>
+
+      <h4>缺口怎么补：字幕需要另一把钥匙</h4>
+      <p>智谱只做文字。回软件后，在「语音识别（字幕靠它）」那一栏，点一下
+        <span class="btn-name">用 硅基流动 做语音识别（免费）</span>，然后按第 4.1 节领一把硅基流动的钥匙填进去。
+        两把钥匙各管一件事，都是免费的。</p>
+
+      <h4>回软件怎么填</h4>
+      <table>
+        <tr><th style="width:30%">软件里的项</th><th>填什么</th></tr>
+        <tr><td>第 1 步 · 服务商</td><td><b>智谱 AI GLM</b></td></tr>
+        <tr><td>第 2 步 · API Key</td><td>粘贴刚才复制的那一串，点「保存」</td></tr>
+        <tr><td>第 3 步 · 模型</td><td><span class="key">glm-4-flash（免费 · 接话最快）</span></td></tr>
+        <tr><td>语音识别（字幕）</td><td>要另配 → 见上面「缺口怎么补」</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ---------- 4.3 魔搭 ---------- -->
+  <section class="provider" id="provider-modelscope">
+    <div class="head">
+      <span class="idx">3</span>
+      <h3>魔搭 ModelScope <span class="pill free">每天刷新</span></h3>
+      <div class="tags">
+        <span class="pill free">每天免费额度</span>
+        <span class="pill ok">能做字幕</span>
+        <span class="pill need">要绑阿里云</span>
+      </div>
+    </div>
+    <div class="body">
+      <p><b>为什么选它：</b>阿里旗下，<b>每天自动刷新免费调用次数</b>，适合「一点都不想花钱」的人。它也能做语音识别，所以可以和智谱配成一套。</p>
+
+      <dl class="kv">
+        <dt>官网</dt>
+        <dd><a class="key" href="https://modelscope.cn/" target="_blank" rel="noreferrer">https://modelscope.cn/</a></dd>
+        <dt>领钥匙</dt>
+        <dd><a class="key" href="https://modelscope.cn/my/myaccesstoken" target="_blank" rel="noreferrer">https://modelscope.cn/my/myaccesstoken</a></dd>
+        <dt>要钱吗</dt>
+        <dd>每天有免费调用次数；超出后需要绑定阿里云账号继续用。</dd>
+      </dl>
+
+      <div class="box warn">
+        <span class="tag">这家最特别的一点：它不叫「API Key」</span>
+        魔搭把钥匙叫 <b>「访问令牌」</b>（Access Token）。别在页面里找「API Key」，找 <b>令牌</b> 两个字。
+      </div>
+
+      <ol class="steps">
+        <li>浏览器打开 <a class="key" href="https://modelscope.cn/" target="_blank" rel="noreferrer">https://modelscope.cn/</a>
+          <span class="done">会看到：右上角「登录」。</span></li>
+        <li>点登录 / 注册，用手机号或阿里云账号注册。</li>
+        <li>按提示<b>绑定阿里云账号</b>（这一步是为了开通推理 API 的额度，免费）。</li>
+        <li>登录后打开 <a class="key" href="https://modelscope.cn/my/myaccesstoken" target="_blank" rel="noreferrer">https://modelscope.cn/my/myaccesstoken</a>
+          <span class="done">会看到：「访问令牌」页面，有「新建访问令牌」。</span></li>
+        <li>点 <span class="btn-name">新建访问令牌</span>，名字随便填，确定。
+          <span class="done">会看到：一串字符，旁边有复制按钮。</span></li>
+        <li>复制并保存到记事本。</li>
+      </ol>
+
+      <div class="box warn">
+        <span class="tag">这一步最容易卡住的地方</span>
+        <b>① 找不到钥匙</b>：记住它叫「访问令牌」，不叫 API Key。<br />
+        <b>② 提示要绑定阿里云</b>：必须绑，绑完才有免费额度，不花钱。<br />
+        <b>③ 用了几天突然报错「额度用完」</b>：等第二天额度自动刷新，或者改用硅基流动。
+      </div>
+
+      <h4>回软件怎么填</h4>
+      <table>
+        <tr><th style="width:30%">软件里的项</th><th>填什么</th></tr>
+        <tr><td>第 1 步 · 服务商</td><td><b>魔搭 ModelScope（阿里）</b></td></tr>
+        <tr><td>第 2 步 · API Key</td><td>粘贴令牌，点「保存」</td></tr>
+        <tr><td>第 3 步 · 模型</td><td>选带「免费额度」的那个</td></tr>
+        <tr><td>语音识别（字幕）</td><td>同一家会共用钥匙；如果显示缺 Key，再单独粘贴一次</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ---------- 4.4 阿里云百炼 ---------- -->
+  <section class="provider" id="provider-dashscope">
+    <div class="head">
+      <span class="idx">4</span>
+      <h3>阿里云百炼（通义千问） <span class="pill free">大厂官方</span></h3>
+      <div class="tags">
+        <span class="pill free">新人免费额度</span>
+        <span class="pill ok">能做字幕</span>
+        <span class="pill need">要实名</span>
+      </div>
+    </div>
+    <div class="body">
+      <p><b>为什么选它：</b>阿里官方，模型最全、最稳定，<b>语音识别也有</b>。代价是要走阿里云那套注册和实名流程，比别家多几步。</p>
+
+      <dl class="kv">
+        <dt>官网</dt>
+        <dd><a class="key" href="https://bailian.console.aliyun.com/" target="_blank" rel="noreferrer">https://bailian.console.aliyun.com/</a></dd>
+        <dt>领钥匙</dt>
+        <dd><a class="key" href="https://bailian.console.aliyun.com/?apiKey=1" target="_blank" rel="noreferrer">https://bailian.console.aliyun.com/?apiKey=1</a></dd>
+        <dt>要钱吗</dt>
+        <dd>新用户每个模型各送一批免费额度；<b>只有「华北 2（北京）」地域有免费额度。</b></dd>
+      </dl>
+
+      <ol class="steps">
+        <li>打开 <a class="key" href="https://bailian.console.aliyun.com/" target="_blank" rel="noreferrer">https://bailian.console.aliyun.com/</a>，登录阿里云账号（没有就注册）。</li>
+        <li>首次进入会弹<b>服务协议</b>，点同意，即自动开通百炼。
+          <span class="done">会看到：进入百炼控制台首页。</span></li>
+        <li>如果提示「尚未实名认证」，先去实名（个人身份证，免费）。<b>没实名拿不到免费额度。</b></li>
+        <li>看页面<b>右上角的地域</b>，确认是 <span class="btn-name">华北 2（北京）</span>。
+          <span class="done">这一步很重要：换成别的城市就没有免费额度，还会报错。</span></li>
+        <li>打开 <a class="key" href="https://bailian.console.aliyun.com/?apiKey=1" target="_blank" rel="noreferrer">https://bailian.console.aliyun.com/?apiKey=1</a>
+          （或左侧「密钥管理」）。
+          <span class="done">会看到：API-KEY 列表，右上角「创建 API Key」。</span></li>
+        <li>点 <span class="btn-name">创建 API Key</span>，弹窗里：归属账号选<b>主账号</b>，业务空间选<b>默认</b>，权限选<b>全部</b>，点确定。
+          <span class="done">会看到：弹窗里显示完整 Key，<b>只在这一次显示</b>。</span></li>
+        <li>立刻复制，存到记事本。</li>
+      </ol>
+
+      <div class="box danger">
+        <span class="tag">阿里这条最容易犯的错</span>
+        <b>关掉弹窗就再也看不到完整 Key 了。</b>只能「重置」或再建一个。
+        所以第 6 步看到那串字的时候，<b>第一件事就是复制</b>，别先看别的。
+      </div>
+
+      <h4>回软件怎么填</h4>
+      <table>
+        <tr><th style="width:30%">软件里的项</th><th>填什么</th></tr>
+        <tr><td>第 1 步 · 服务商</td><td><b>阿里云百炼（通义千问）</b></td></tr>
+        <tr><td>第 2 步 · API Key</td><td>粘贴 Key，点「保存」</td></tr>
+        <tr><td>第 3 步 · 模型</td><td><span class="key">qwen-turbo（有免费额度）</span> 或 <span class="key">qwen-flash</span></td></tr>
+        <tr><td>语音识别（字幕）</td><td>同一家共用钥匙；模型选 <span class="key">qwen3-asr-flash</span></td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ---------- 4.5 火山方舟 ---------- -->
+  <section class="provider" id="provider-volces">
+    <div class="head">
+      <span class="idx">5</span>
+      <h3>火山方舟（豆包） <span class="pill free">每天额度</span></h3>
+      <div class="tags">
+        <span class="pill free">每天送额度</span>
+        <span class="pill need">不做字幕</span>
+        <span class="pill need">步骤偏多</span>
+      </div>
+    </div>
+    <div class="body">
+      <p><b>为什么选它：</b>字节跳动的豆包模型，速度快、每天送额度。但它有一个<b>新手必踩的坑</b>：建完 Key 还得去「模型广场」手动开通模型，否则调用时报 <span class="key">ModelNotOpen</span>，看起来像 Key 坏了。</p>
+
+      <dl class="kv">
+        <dt>官网</dt>
+        <dd><a class="key" href="https://console.volcengine.com/ark" target="_blank" rel="noreferrer">https://console.volcengine.com/ark</a></dd>
+        <dt>领钥匙</dt>
+        <dd>控制台左侧 <b>API Key 管理</b></dd>
+        <dt>要钱吗</dt>
+        <dd>每天有免费额度，按天刷新；超出部分按量计费。</dd>
+      </dl>
+
+      <ol class="steps">
+        <li>打开 <a class="key" href="https://console.volcengine.com/ark" target="_blank" rel="noreferrer">https://console.volcengine.com/ark</a>，用手机号 / 抖音 / 微信登录火山引擎。</li>
+        <li>按提示完成<b>实名认证</b>。</li>
+        <li>进入「火山方舟」控制台，左侧找 <span class="btn-name">API Key 管理</span> → <span class="btn-name">创建 API Key</span>，复制保存。</li>
+        <li><b>关键一步：</b>左侧进 <span class="btn-name">模型广场</span>，找到你要用的豆包模型，点 <span class="btn-name">开通</span>（有的写「立即使用」）。
+          <span class="done">会看到：模型状态变成「已开通」。</span></li>
+        <li>如果想用「接入点」方式：左侧 <span class="btn-name">在线推理</span> → 创建推理接入点 → 复制它给的 <span class="key">ep-</span> 开头的 ID。
+          <span class="done">这个 ep- ID 要当成「模型名」填进软件。</span></li>
+      </ol>
+
+      <div class="box danger">
+        <span class="tag">报 ModelNotOpen / 模型未开通</span>
+        不是 Key 错了，是<b>你还没在「模型广场」点开通</b>。回去点一下就好。
+      </div>
+
+      <h4>回软件怎么填</h4>
+      <table>
+        <tr><th style="width:30%">软件里的项</th><th>填什么</th></tr>
+        <tr><td>第 1 步 · 服务商</td><td><b>火山方舟（豆包）</b></td></tr>
+        <tr><td>第 2 步 · API Key</td><td>粘贴 Key，点「保存」</td></tr>
+        <tr><td>第 3 步 · 模型</td><td>豆包模型名，<b>或</b> <span class="key">ep-</span> 开头的接入点 ID</td></tr>
+        <tr><td>语音识别（字幕）</td><td>要另配（点「用 硅基流动 做语音识别」）</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ---------- 4.6 DeepSeek ---------- -->
+  <section class="provider" id="provider-deepseek">
+    <div class="head">
+      <span class="idx">6</span>
+      <h3>深度求索 DeepSeek <span class="pill paid">要充值</span></h3>
+      <div class="tags">
+        <span class="pill paid">无免费额度</span>
+        <span class="pill need">不做字幕</span>
+        <span class="pill ok">便宜</span>
+      </div>
+    </div>
+    <div class="body">
+      <p><b>什么时候选它：</b>免费额度用腻了、想要更聪明更自然的回答。<b>但它没有免费额度，必须先充值</b>（10 元能用很久）。<b>新手第一把钥匙不建议用它。</b></p>
+
+      <dl class="kv">
+        <dt>官网</dt>
+        <dd><a class="key" href="https://platform.deepseek.com/" target="_blank" rel="noreferrer">https://platform.deepseek.com/</a></dd>
+        <dt>领钥匙</dt>
+        <dd><a class="key" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noreferrer">https://platform.deepseek.com/api_keys</a></dd>
+        <dt>要钱吗</dt>
+        <dd>按用量计费，<b>没有免费额度</b>；单价是行业里最低的一档。</dd>
+      </dl>
+
+      <ol class="steps">
+        <li>打开 <a class="key" href="https://platform.deepseek.com/" target="_blank" rel="noreferrer">https://platform.deepseek.com/</a>，手机号注册。</li>
+        <li>完成实名认证。</li>
+        <li>左侧 <span class="btn-name">充值</span>，充最小额度（例如 10 元）。<b>不充的话 Key 建了也用不了。</b></li>
+        <li>左侧 <span class="btn-name">API keys</span> → <span class="btn-name">创建 API key</span>，复制保存。</li>
+      </ol>
+
+      <div class="box warn">
+        <span class="tag">报「余额不足 / 402」</span>
+        就是<b>账户里没钱了</b>。这一条也是软件「一键诊断」能直接告诉你的。
+        充值入口在左侧「充值」，充完立刻可用。
+      </div>
+
+      <h4>回软件怎么填</h4>
+      <table>
+        <tr><th style="width:30%">软件里的项</th><th>填什么</th></tr>
+        <tr><td>第 1 步 · 服务商</td><td><b>深度求索 DeepSeek</b></td></tr>
+        <tr><td>第 2 步 · API Key</td><td>粘贴 Key，点「保存」</td></tr>
+        <tr><td>第 3 步 · 模型</td><td><span class="key">deepseek-chat</span>（别选 reasoner，会想很久）</td></tr>
+        <tr><td>语音识别（字幕）</td><td>要另配（点「用 硅基流动 做语音识别」）</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ---------- 4.7 Kimi ---------- -->
+  <section class="provider" id="provider-moonshot">
+    <div class="head">
+      <span class="idx">7</span>
+      <h3>月之暗面 Kimi <span class="pill paid">送额度</span></h3>
+      <div class="tags">
+        <span class="pill paid">新人赠送</span>
+        <span class="pill need">不做字幕</span>
+      </div>
+    </div>
+    <div class="body">
+      <dl class="kv">
+        <dt>官网</dt>
+        <dd><a class="key" href="https://platform.moonshot.cn/" target="_blank" rel="noreferrer">https://platform.moonshot.cn/</a></dd>
+        <dt>领钥匙</dt>
+        <dd><a class="key" href="https://platform.moonshot.cn/console/api-keys" target="_blank" rel="noreferrer">https://platform.moonshot.cn/console/api-keys</a></dd>
+      </dl>
+      <ol class="steps">
+        <li>打开 <a class="key" href="https://platform.moonshot.cn/" target="_blank" rel="noreferrer">https://platform.moonshot.cn/</a>，手机号注册。</li>
+        <li>新账号通常有赠送额度，在「费用」页能看到。</li>
+        <li>左侧 <span class="btn-name">API Key 管理</span> → <span class="btn-name">新建</span>，复制保存。</li>
+      </ol>
+      <p><b>回软件：</b>服务商选「月之暗面 Kimi」，模型选 <span class="key">moonshot-v1-8k</span>。字幕要另配硅基流动。</p>
+    </div>
+  </section>
+
+  <!-- ---------- 4.8 腾讯混元 ---------- -->
+  <section class="provider" id="provider-hunyuan">
+    <div class="head">
+      <span class="idx">8</span>
+      <h3>腾讯混元 <span class="pill free">lite 免费</span></h3>
+      <div class="tags">
+        <span class="pill free">hunyuan-lite 免费</span>
+        <span class="pill need">不做字幕</span>
+        <span class="pill need">要实名</span>
+      </div>
+    </div>
+    <div class="body">
+      <dl class="kv">
+        <dt>官网</dt>
+        <dd><a class="key" href="https://console.cloud.tencent.com/hunyuan" target="_blank" rel="noreferrer">https://console.cloud.tencent.com/hunyuan</a></dd>
+        <dt>领钥匙</dt>
+        <dd>控制台里的 <b>API Key</b> 页面</dd>
+      </dl>
+      <ol class="steps">
+        <li>打开 <a class="key" href="https://console.cloud.tencent.com/hunyuan" target="_blank" rel="noreferrer">https://console.cloud.tencent.com/hunyuan</a>，用微信或 QQ 登录腾讯云。</li>
+        <li>完成实名认证（个人身份证，免费）。</li>
+        <li>在混元控制台找 <span class="btn-name">API Key</span> → <span class="btn-name">新建</span>，复制保存。</li>
+        <li>确认 <span class="key">hunyuan-lite</span> 已开通（免费的通常是默认开的）。</li>
+      </ol>
+      <p><b>回软件：</b>服务商选「腾讯混元」，模型选 <span class="key">hunyuan-lite</span>。字幕要另配硅基流动。</p>
+    </div>
+  </section>
+
+  <!-- ---------- 4.9 阶跃 ---------- -->
+  <section class="provider" id="provider-stepfun">
+    <div class="head">
+      <span class="idx">9</span>
+      <h3>阶跃星辰 StepFun <span class="pill paid">送额度</span></h3>
+      <div class="tags">
+        <span class="pill paid">新人赠送</span>
+        <span class="pill need">不做字幕</span>
+      </div>
+    </div>
+    <div class="body">
+      <dl class="kv">
+        <dt>官网</dt>
+        <dd><a class="key" href="https://platform.stepfun.com/" target="_blank" rel="noreferrer">https://platform.stepfun.com/</a></dd>
+        <dt>领钥匙</dt>
+        <dd><a class="key" href="https://platform.stepfun.com/interface-key" target="_blank" rel="noreferrer">https://platform.stepfun.com/interface-key</a></dd>
+      </dl>
+      <ol class="steps">
+        <li>打开 <a class="key" href="https://platform.stepfun.com/" target="_blank" rel="noreferrer">https://platform.stepfun.com/</a>，手机号注册。</li>
+        <li>左侧 <span class="btn-name">接口密钥</span> → <span class="btn-name">新建</span>，复制保存。</li>
+      </ol>
+      <p><b>回软件：</b>服务商选「阶跃星辰 StepFun」，模型选 <span class="key">step-2-mini</span>。字幕要另配硅基流动。</p>
+    </div>
+  </section>
+
+  <!-- ======================= 5 ======================= -->
+  <h2 id="freelist"><span class="num">5</span>免费名单：哪些名字可以放心选
+    <span class="sub">软件下拉框里带「免费」字样的都是免费的；这里再给你一张对照，防止选错。</span>
+  </h2>
+
+  <div class="rank">
+    <div class="col good">
+      <h4>✓ 放心选（免费）</h4>
+      <ul>
+        <li>智谱：<code>glm-4-flash</code>、<code>glm-4.7-flash</code></li>
+        <li>硅基流动：<code>Qwen2.5-7B-Instruct</code>、<code>GLM-4-9B-0414</code>、<code>Qwen3-8B</code></li>
+        <li>硅基流动（字幕）：<code>SenseVoiceSmall</code></li>
+        <li>魔搭：带「免费额度」字样的 Qwen 小模型</li>
+        <li>阿里云百炼：<code>qwen-turbo</code>、<code>qwen-flash</code>（新人有额度）</li>
+        <li>腾讯混元：<code>hunyuan-lite</code></li>
+      </ul>
+    </div>
+    <div class="col bad">
+      <h4>✗ 先别选（要花钱）</h4>
+      <ul>
+        <li>名字里带 <code>Pro</code> / <code>Pro/</code> 的</li>
+        <li>名字里带 <code>plus</code> / <code>max</code> / <code>air</code> 的</li>
+        <li><code>DeepSeek-V3</code>、<code>DeepSeek-V4</code> 系列</li>
+        <li><code>kimi-latest</code>、<code>moonshot-v1-32k</code></li>
+        <li><code>doubao-pro-32k</code>、<code>hunyuan-turbos</code></li>
+        <li><code>qwen-max</code>、<code>glm-4-plus</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="box tip">
+    <span class="tag">一句口诀（不完全准，但能挡掉九成错误）</span>
+    <b>「Flash / lite / turbo = 免费或很便宜；Pro / Plus / Max = 要钱。」</b><br />
+    拿不准怎么办：<b>软件里只挑旁边标了「免费」两个字的</b>，那是软件自己核对过的。
+    想看总共有哪些能用的，点 <span class="btn-name">刷新可用模型</span>，它会把你的账号真能用的模型全列出来。
+  </div>
+
+  <div class="box warn">
+    <span class="tag">会「想很久」的模型，别用来接话</span>
+    名字后面写着 <b>「推理型，稍慢」</b> 的（例如 <span class="key">Qwen3-8B</span>、<span class="key">deepseek-reasoner</span>），
+    回答前会先自己打一大段草稿，实测一句话要等 <b>10 秒以上</b> —— 对面早说完了。
+    实时对话请选普通模型（带「接话最快」字样的）。
+  </div>
+
+  <!-- ======================= 6 ======================= -->
+  <h2 id="test"><span class="num">6</span>第五步：测试连接，然后开始听
+    <span class="sub">这一步会真的发一次请求，所以能一眼看出通没通。</span>
+  </h2>
+
+  <div class="card">
+    <ol class="steps">
+      <li>回到软件 → 设置 → <span class="btn-name">API 功能</span>。</li>
+      <li>点最上面的 <span class="btn-name">测试连接</span>，等 1～5 秒。
+        <span class="done">绿色 +「连接成功 · 用了 xxx 毫秒」= 成了，直接下一步。</span></li>
+      <li>如果出现<b>红色</b>：不用猜，去第 8 章「报错对照表」，按你看到的那句话找答案。</li>
+      <li>关掉设置（右上角返回），点 <span class="btn-name">开始监听系统声音</span>。</li>
+      <li>打开电影 / 哔哩哔哩 / 网课，<b>音量开一点点</b>就行。
+        <span class="done">看标题下面那条音量条 —— 会跟着声音跳，就说明软件真的听到了。</span></li>
+      <li>等几秒，字幕就会出现。</li>
+    </ol>
+  </div>
+
+  <div class="box tip">
+    <span class="tag">音量条会动，但一直没字幕？</span>
+    ① 说明「耳朵」是好的，缺的是<b>语音识别的钥匙</b>。→ 点「用 硅基流动 做语音识别（免费）」。<br />
+    ② 还有一个更快的办法：设置 → 常用功能 → 点 <span class="btn-name">一键诊断</span>，
+    它会真的发一次请求，直接告诉你卡在哪一环（是没 Key、没钱、还是模型不对）。
+  </div>
+
+  <!-- ======================= 7 ======================= -->
+  <h2 id="pay"><span class="num">7</span>花钱这件事，最后再说
+    <span class="sub">先说结论：你可以一直不花钱。这一章只是让你知道自己什么时候才需要掏钱。</span>
+  </h2>
+
+  <p class="lead"><b>软件本身是免费的。</b>唯一可能产生费用的，是「模型调用」——也就是让服务商的大脑替你干活，
+    按次数或字数算钱。所以花钱不花钱，<b>完全取决于你选哪个模型</b>。</p>
+
+  <table>
+    <tr>
+      <th style="width:22%">你的阶段</th>
+      <th style="width:26%">怎么配</th>
+      <th>大概要花多少</th>
+    </tr>
+    <tr class="hi">
+      <td><b>先试试</b>（大多数人停在这里就够）</td>
+      <td>硅基流动的 ¥0 模型，或智谱 glm-4-flash</td>
+      <td><b>0 元。</b>免费模型本来就标价 0，不会扣钱。</td>
+    </tr>
+    <tr>
+      <td><b>天天用，嫌免费模型慢</b></td>
+      <td>换成付费小模型（qwen-flash、deepseek-chat）</td>
+      <td>一顿饭钱的零头。DeepSeek 充 10 元能用很久。</td>
+    </tr>
+    <tr>
+      <td><b>想要最自然的回答</b></td>
+      <td>付费大模型（qwen-plus、glm-4-plus 等）</td>
+      <td>比上面贵一些，仍然按用量算，不用不扣。</td>
+    </tr>
+  </table>
+
+  <div class="box warn">
+    <span class="tag">三条防扣费提醒</span>
+    <b>① 不要开「自动续费」。</b>这几家都是充值制，不是月费会员，用完再充就行。<br />
+    <b>② 只选标着「免费」的模型，就是真免费。</b>免费模型是服务商自己定价 0 元，不是软件在补贴，不会事后扣你钱。<br />
+    <b>③ 想彻底放心：</b>在服务商后台找「额度用尽即停止调用」这类开关，打开它，余额到 0 就自动停，不会欠费。
+  </div>
+
+  <div class="box note">
+    <span class="tag">为什么教程一开始不推收费的</span>
+    因为新手最该先确认的是「这套东西在我电脑上能不能跑通」。
+    免费模型完全够验证这件事。<b>等你用顺了、觉得值，再去挑更聪明的付费模型</b>，这样钱不会白花。
+  </div>
+
+  <!-- ======================= 8 ======================= -->
+  <h2 id="errors"><span class="num">8</span>报错对照表（出现红字就来这里找）
+    <span class="sub">软件里「测试连接」和「一键诊断」的提示，都是按这张表写的。</span>
+  </h2>
+
+  <table>
+    <tr>
+      <th style="width:27%">你看到的话</th>
+      <th style="width:20%">什么意思</th>
+      <th>怎么办（照着做）</th>
+    </tr>
+    <tr>
+      <td>还没有填 API Key</td>
+      <td>钥匙没粘上</td>
+      <td>回第 3 章，粘贴后<b>一定要点「保存」</b>，看到「已保存」才算成功</td>
+    </tr>
+    <tr>
+      <td>Key 不对，或者这个 Key 没有权限</td>
+      <td>钥匙错了，或拿错店门的钥匙</td>
+      <td>① 回官网重新复制一次（两头不要有空格，别漏字符）<br />② 确认钥匙和服务商是<b>同一家</b>（硅基流动的钥匙不能连智谱）</td>
+    </tr>
+    <tr>
+      <td>接口地址或模型名不对（404）</td>
+      <td>地址或模型名打错了</td>
+      <td>最简单的修法：把「第 1 步」的服务商<b>重新选一次</b>，地址和模型会自动填对</td>
+    </tr>
+    <tr>
+      <td>服务商不接受这次请求（400）</td>
+      <td>模型名不存在</td>
+      <td>点 <span class="btn-name">刷新可用模型</span>，从列表里挑，<b>不要手打模型名</b></td>
+    </tr>
+    <tr>
+      <td><b>余额不足 / 402</b></td>
+      <td><b>账户里没钱了</b></td>
+      <td>换回免费模型，或去服务商后台充值。这条最容易误判成「软件坏了」</td>
+    </tr>
+    <tr>
+      <td>请求太快了 / 免费额度用完（429）</td>
+      <td>被限速，或今天的免费次数用光</td>
+      <td>等 1 分钟再试；还不行就换一家（魔搭额度每天刷新），或换另一个免费模型</td>
+    </tr>
+    <tr>
+      <td>连不上服务器</td>
+      <td>网络问题</td>
+      <td>① 确认能上网 ② <b>把 VPN / 代理关掉</b>（国内地址直连更快）③ 换手机热点试一下</td>
+    </tr>
+    <tr>
+      <td>等太久没反应（超时）</td>
+      <td>网速慢 / 服务器忙</td>
+      <td>软件已经自动重试过。换个时间，或换一家服务商</td>
+    </tr>
+    <tr>
+      <td>这个接口不是国内的</td>
+      <td>地址填了国外的</td>
+      <td>这是软件<b>故意挡的</b>。从「第 1 步」列表里选一家国内服务商</td>
+    </tr>
+    <tr>
+      <td>ModelNotOpen / 模型未开通</td>
+      <td>火山方舟没点开通</td>
+      <td>去火山方舟控制台 → 模型广场 → 找到那个模型 → 点「开通」</td>
+    </tr>
+    <tr>
+      <td>有声音、没字幕</td>
+      <td>语音识别没配好</td>
+      <td>点 <span class="btn-name">用 硅基流动 做语音识别（免费）</span>，按第 4.1 节补一把钥匙</td>
+    </tr>
+    <tr>
+      <td>音量条完全不动</td>
+      <td>软件没听到电脑的声音</td>
+      <td>① 确认视频在播放 ② 设置 → 常用功能 → 点 <span class="btn-name">一键诊断</span>，它会指出是哪一环</td>
+    </tr>
+  </table>
+
+  <div class="box tip">
+    <span class="tag">不想一条条对？用「一键诊断」</span>
+    设置 → 常用功能 → <span class="btn-name">一键诊断</span>。它会自动检查九项（采集、设备、Key、模型、网络……），
+    而且会<b>真的发一次请求</b>过去。<b>没问题时不显示任何东西，有问题才列出来</b>，列的就是该改的那一项。
+  </div>
+
+  <!-- ======================= 9 ======================= -->
+  <h2><span class="num">✓</span>一页检查清单
+    <span class="sub">卡住的时候从上往下对，哪条没打勾就补哪条。</span>
+  </h2>
+  <ul class="checklist">
+    <li>在服务商官网注册了账号（手机号 + 验证码）</li>
+    <li>需要实名的，已经实名完成</li>
+    <li>创建并复制了那串钥匙（<span class="key">sk-</span> 开头，或魔搭的「访问令牌」）</li>
+    <li>软件里选对了<b>同一家</b>服务商</li>
+    <li>钥匙粘贴后点了「保存」，右边显示「已保存」</li>
+    <li>选了一个<b>带「免费」字样</b>的模型</li>
+    <li>点了「测试连接」，看到绿色「连接成功」</li>
+    <li>需要字幕的，语音识别那把钥匙也配好了</li>
+    <li>点了「开始监听系统声音」，音量条会跟着跳</li>
+    <li>字幕出来了 ✅</li>
+  </ul>
+
+  <!-- ======================= 10 ======================= -->
+  <h2 id="faq"><span class="num">Q</span>常见疑问</h2>
+
+  <details open>
+    <summary>真的可以一直不花钱吗？会不会偷偷扣钱？</summary>
+    <p>
+      可以。免费模型是服务商<b>自己定价 0 元</b>，不是先免费用、后补扣。
+      你要做的只有一件事：<b>只选带「免费」字样的模型</b>。
+      余额和用量在服务商后台随时能看，充值是手动行为，不开自动续费就不会自动扣。
+    </p>
+  </details>
+
+  <details>
+    <summary>我完全不懂电脑，能学会吗？</summary>
+    <p>
+      能。整件事只有两个动作：<b>在网页上复制一串字符</b>、<b>在软件里粘贴</b>。
+      和你平时复制一个网址发到微信里，是一模一样的操作。唯一要记住的是：钥匙别给别人看。
+    </p>
+  </details>
+
+  <details>
+    <summary>为什么教程推荐硅基流动，而不是最"大牌"的那家？</summary>
+    <p>
+      因为它是唯一「<b>一把钥匙同时管文字回复和语音字幕</b>」的免费选项。
+      新手最怕的就是「配了两把钥匙，不知道哪把错了」。先用一把能跑通，以后再换别家随时可以。
+    </p>
+  </details>
+
+  <details>
+    <summary>我手里已经有一把 Key，但不知道是哪家的怎么办？</summary>
+    <p>
+      看它从哪个网站拿的：<span class="key">cloud.siliconflow.cn</span> 是硅基流动、
+      <span class="key">open.bigmodel.cn</span> 是智谱、<span class="key">modelscope.cn</span> 是魔搭、
+      <span class="key">platform.deepseek.com</span> 是 DeepSeek。
+      回软件把「第 1 步」的服务商改成对应那家，再粘贴，然后点「测试连接」。
+      <b>服务商和钥匙必须是同一家</b>，串了会报「Key 没有权限」。
+    </p>
+  </details>
+
+  <details>
+    <summary>为什么必须用国内的模型？用国外的行不行？</summary>
+    <p>
+      软件<b>故意</b>只允许国内地址：① 国内直连，不用额外工具，更稳更快；
+      ② 你的声音和对话内容不会发到境外；③ 国内免费额度多得多。
+      这是产品的硬规则，不是故障。
+    </p>
+  </details>
+
+  <details>
+    <summary>换电脑、重装系统之后要重新弄吗？</summary>
+    <p>
+      要重新填一次钥匙。钥匙是加密<b>绑在这台电脑</b>上的，换机器就解不开。
+      但服务商那边的钥匙还在，登录进去再复制一次就行，不用重新注册。
+    </p>
+  </details>
+
+  <details>
+    <summary>想把软件发给朋友，要注意什么？</summary>
+    <p>
+      直接发安装包就行，朋友双击装好就能用，<b>不需要装 Python 或别的东西</b>。
+      只有两件事你得提醒他：<br />
+      ① 安装时 Windows 可能弹蓝色窗口，点<b>「更多信息」→「仍要运行」</b>（软件没有购买数字签名，请确认安装包来自你信任的渠道）；<br />
+      ② <b>钥匙必须他自己去领</b>——你的钥匙加密绑在你的电脑上，拷过去也解不开；
+      而且多台电脑共用一个免费 Key，会被服务商判定异常、两边一起报「请求太快了」。
+    </p>
+  </details>
+
+  <details>
+    <summary>我不想联网、不想填钥匙，能用吗？</summary>
+    <p>
+      可以先用<b>演示模式</b>看界面长什么样（设置 → API 功能 → 最下面）。
+      但演示模式听不到电脑里的真实声音，只用来熟悉按钮。
+    </p>
+  </details>
+
+  <details>
+    <summary>朋友装完打开是空的，是不是坏了？</summary>
+    <p>
+      不是。新装的软件默认是真实监听，但<b>还没有钥匙</b>，所以不出字幕。让他看两处：<br />
+      ① 音量条会不会跳 —— 会跳说明声音进来了（这一步不需要钥匙）；<br />
+      ② 中间那段字会直接说「已经听到声音了，只差一个语音识别 Key」。<br />
+      跟着本教程领一把钥匙填进去，字幕立刻就有。
+    </p>
+  </details>
+
+  <footer>
+    <p><b>最后一句总结：</b>选一家 → 手机号注册 → 创建密钥 → 复制 → 粘进软件 → 点「测试连接」→ 看到绿色就成了。</p>
+    <p>还是不通？设置 → 常用功能 → <b>一键诊断</b>。它会说明白是「地址」「钥匙」「模型」还是「余额」的问题，比凭感觉猜快得多。</p>
+    <p style="margin-top:14px;font-size:13.5px;">AI Conversation Copilot · 新手连接免费模型教程 · 建议收藏或打印，随时翻</p>
+  </footer>
+
+</div>
+</body>
+</html>

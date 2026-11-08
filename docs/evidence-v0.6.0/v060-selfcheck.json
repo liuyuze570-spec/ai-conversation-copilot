@@ -1,0 +1,119 @@
+[
+  {
+    "name": "0-settings",
+    "data": {
+      "before": false,
+      "after": "mock"
+    }
+  },
+  {
+    "name": "1-language-settings",
+    "data": {
+      "uiLanguage": "简体中文（本版只有这一种）",
+      "hasNative": true,
+      "hasTarget": true,
+      "hasHint": true,
+      "hasAccent": true,
+      "directionText": "本版实测过的组合：中文 → 英语（汉字近音）日本語 → 英語（片假名近音）English → 日本語（罗马字）其他组合可以在上面任选，但只做过结构验证，没有对应的人工核对样本 —— 界面上不把它们标成「已支持」。当前组合：Chinese → English，在实测清单内",
+      "voiceText": "缺少 en-US 语音｜系统现有 1 种语言的声音（zh），装一个对应语音包再回来看",
+      "voiceMissingHintShown": true
+    }
+  },
+  {
+    "name": "2-direction-pair",
+    "data": {
+      "ui": "zh-CN",
+      "comprehension": "Chinese",
+      "target": "English",
+      "hint": "hanzi",
+      "accent": "en-US",
+      "readingHint": true
+    }
+  },
+  {
+    "name": "2b-settings-closed",
+    "data": {
+      "ok": true
+    }
+  },
+  {
+    "name": "3-word-hints",
+    "data": {
+      "ok": true,
+      "words": 9,
+      "hints": 9,
+      "sameCount": true,
+      "firstWord": "Please",
+      "firstHint": "普利斯",
+      "activeWordsAfterClick": 1,
+      "activeHintsAfterClick": 1,
+      "savedHintSystem": "hanzi",
+      "romanizationText": "普利斯 塞恩德 德 瑞波尔特 拜 3 普 姆 特莫柔"
+    }
+  },
+  {
+    "name": "4-reply-panel",
+    "data": {
+      "ok": true,
+      "hasMeaning": true,
+      "meaningText": "听起来不错。再多跟我说说吧。",
+      "hintSystem": "hanzi",
+      "hintText": "泽特 桑兹 格瑞特 特尔 梅 莫尔 额包特 伊特",
+      "hasPhrases": true,
+      "hasShowCard": true
+    }
+  },
+  {
+    "name": "5-show-card",
+    "data": {
+      "ok": true,
+      "openedShellInert": true,
+      "shellInertAttrWhileOpen": true,
+      "themTextLength": 41,
+      "themFontSize": "30px",
+      "hasSpeak": true,
+      "hasSlow": true,
+      "meHasMeaning": true,
+      "meMeaningText": "听起来不错。再多跟我说说吧。",
+      "meHasHint": true,
+      "meHintSystem": "hanzi",
+      "meHintText": "泽特 桑兹 格瑞特 特尔 梅 莫尔 额包特 伊特",
+      "meFontSize": "20px",
+      "meTextLength": 41,
+      "closedAfterEsc": true,
+      "shellInertAfterClose": false,
+      "focusBackToTrigger": true,
+      "confirmTipShown": true
+    }
+  },
+  {
+    "name": "6-seed-history",
+    "data": {
+      "ok": true,
+      "written": 120
+    }
+  },
+  {
+    "name": "7-load-earlier",
+    "data": {
+      "ok": true,
+      "firstPage": 50,
+      "secondPage": 100,
+      "grew": true,
+      "topOriginal": "Seed line 21",
+      "stillHasLoadEarlier": true
+    }
+  },
+  {
+    "name": "8-persisted",
+    "data": {
+      "original": 18,
+      "translation": 24,
+      "romanization": 18,
+      "readingVersion": 2,
+      "comprehension": "Chinese",
+      "hint": "hanzi",
+      "accent": "en-US"
+    }
+  }
+]

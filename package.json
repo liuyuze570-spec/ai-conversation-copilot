@@ -1,0 +1,91 @@
+{
+  "name": "ai-conversation-copilot",
+  "version": "0.6.2",
+  "description": "AI 英语对话副驾驶 - Windows 实时英语对话辅助悬浮窗",
+  "main": "dist/main/index.js",
+  "author": "AI Conversation Copilot",
+  "license": "MIT",
+  "private": true,
+  "build": {
+    "appId": "com.aiconversation.copilot",
+    "productName": "AI Conversation Copilot",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "src/python/audio_capture",
+        "to": "python"
+      },
+      {
+        "from": "vendor/python-runtime",
+        "to": "python-runtime"
+      },
+      {
+        "from": "docs",
+        "to": "docs"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "unicode": true,
+      "artifactName": "AI-Conversation-Copilot-Setup-${version}.${ext}"
+    }
+  },
+  "scripts": {
+    "dev": "concurrently -k -n MAIN,RENDERER,ELECTRON -c blue,magenta,green \"npm:dev:main\" \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:main": "tsc -p tsconfig.main.json --watch --preserveWatchOutput",
+    "dev:renderer": "vite --config vite.renderer.config.ts",
+    "dev:electron": "wait-on tcp:5173 http-get://localhost:5173 && cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://localhost:5173 node scripts/start-electron.js .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.main.json --noEmit",
+    "build": "npm run build:renderer && npm run build:main",
+    "build:renderer": "vite build --config vite.renderer.config.ts",
+    "build:main": "tsc -p tsconfig.main.json",
+    "start": "node scripts/start-electron.js .",
+    "open": "node scripts/open.js",
+    "dist:win": "node scripts/dist-win.js",
+    "prepare:py": "node scripts/prepare-python-runtime.js",
+    "clean": "rimraf dist release",
+    "test:unit": "node .dev/competition-unit.mjs && node .dev/reliability-unit.mjs && node .dev/levels-health-unit.mjs && node .dev/pron-unit.mjs && node .dev/latency-vad-unit.mjs && node .dev/reply-reveal-unit.mjs && node .dev/status-heal-unit.mjs && node .dev/history-unit.mjs && node .dev/reading-unit.mjs && node .dev/hint-unit.mjs && node .dev/tts-unit.mjs && node .dev/samples-unit.mjs && node .dev/confirm-unit.mjs && node .dev/asr-output-unit.mjs",
+    "test:all": "npm run typecheck && npm run build:main && npm run test:unit"
+  },
+  "dependencies": {
+    "node-sqlite3-wasm": "^0.8.61",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "ws": "8.18.0",
+    "zustand": "5.0.2"
+  },
+  "devDependencies": {
+    "@esbuild/win32-x64": "0.21.5",
+    "@rollup/rollup-win32-x64-msvc": "4.63.5",
+    "@types/node": "22.10.2",
+    "@types/react": "18.3.17",
+    "@types/react-dom": "18.3.5",
+    "@types/ws": "8.5.13",
+    "@vitejs/plugin-react": "4.3.4",
+    "autoprefixer": "10.4.20",
+    "concurrently": "9.1.0",
+    "cross-env": "7.0.3",
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8",
+    "postcss": "8.4.49",
+    "rimraf": "6.0.1",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.6.3",
+    "vite": "5.4.11",
+    "wait-on": "8.0.3"
+  }
+}

@@ -1,0 +1,40 @@
+# 单进程镜像：一个容器同时提供网页与接口。
+# 镜像里没有 Node，也没有 node_modules —— 翻译是进程内 ONNX 推理。
+FROM python:3.12-slim
+
+# faster-whisper(ctranslate2) 在 Debian slim 上需要 OpenMP 运行库
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libgomp1 \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    COPILOT_WHISPER_DIR=/app/models/faster-whisper-base \
+    COPILOT_MT_MODEL_DIR=/app/mt-models/Xenova/opus-mt-en-zh \
+    COPILOT_WEB_DIST=/app/web-dist
+
+WORKDIR /app
+
+COPY server/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# 只拷运行时用到的代码（不带 .venv / testdata / 测试脚本）
+COPY server/app.py server/engine_mt.py server/engine_mt_onnx.py \
+     server/engine_asr.py server/engine_reply.py /app/
+
+# 模型在构建时进镜像：运行时不会联网下载
+COPY server/models /app/models
+COPY mt/models /app/mt-models
+COPY web/dist /app/web-dist
+
+# 非 root 运行
+RUN useradd --create-home --uid 10001 copilot \
+ && chown -R copilot:copilot /app
+USER copilot
+
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status==200 else 1)"
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

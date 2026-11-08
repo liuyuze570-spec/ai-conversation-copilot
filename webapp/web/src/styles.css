@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #0b0e14;
+  color: #f2f5fa;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei',
+    'PingFang SC', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 焦点必须看得见：不依赖颜色区分状态，但键盘位置必须清楚。 */
+:focus-visible {
+  outline: 2px solid #8ea8ff;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* 高对比：真换底色与描边，不是只把文字调亮。 */
+.hc body,
+body.hc {
+  background: #000;
+  color: #fff;
+}
+
+.hc .surface {
+  background: #000 !important;
+  border-color: #fff !important;
+}
+
+.hc .muted {
+  color: #e6e6e6 !important;
+}
+
+.hc .accent {
+  color: #ffe066 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

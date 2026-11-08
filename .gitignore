@@ -1,0 +1,24 @@
+node_modules/
+dist/
+release/
+*.log
+.DS_Store
+.env
+
+# .dev/ 里大部分是截图、日志、临时 user-data，不入库；
+# 但 `npm run test:unit` 依赖的 14 个用例脚本必须入库，否则干净克隆跑不了测试。
+.dev/*
+!.dev/*-unit.mjs
+
+# 模型 257MB，不进 Git。用 webapp/deploy/fetch_models.py 按 sha256 取：
+#   python webapp/deploy/fetch_models.py --download
+webapp/mt/models/
+webapp/server/models/
+webapp/mt/node_modules/
+webapp/server/.venv/
+webapp/web/node_modules/
+
+# 测试音频（约 1MB）保留：离线验证与识别回归都要用，删了就没法复现
+
+__pycache__/
+*.pyc

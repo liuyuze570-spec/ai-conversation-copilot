@@ -1,0 +1,229 @@
+{
+  "steps": [
+    {
+      "name": "0-settings",
+      "data": {
+        "before": false,
+        "after": "mock"
+      }
+    },
+    {
+      "name": "0b-privacy",
+      "data": {
+        "shown": true,
+        "mentionsPersist": true,
+        "stillSaysMemoryOnly": false,
+        "mentionsNotEncrypted": true,
+        "points": [
+          "不录像，不保存视频；原始录音用完即弃，不写入磁盘",
+          "识别出来的文字（原文、译文、谐音）会保存在这台电脑上，关掉 / 重启 / 升级都不会删",
+          "记录可以逐段删除、可以整体导出；导出和备份都由你自己发起，不会自动上传",
+          "本地保存不等于加密：能用你这台电脑的人，也能直接读到记录文件",
+          "日志只记耗时、字数、错误码，不写对话内容",
+          "除了上面那家服务商，不会再发给任何第三方"
+        ],
+        "closed": true,
+        "hadHost": true
+      }
+    },
+    {
+      "name": "1-font-controls",
+      "data": {
+        "targets": 3,
+        "labels": [
+          "original",
+          "translation",
+          "romanization"
+        ],
+        "pressed": [
+          "translation"
+        ],
+        "valueText": "24",
+        "valuePx": "24",
+        "hasMinus": true,
+        "hasPlus": true,
+        "minusLabel": "缩小中文译文字号，当前 24 像素",
+        "plusLabel": "放大中文译文字号，当前 24 像素"
+      }
+    },
+    {
+      "name": "2-samples-open",
+      "data": {
+        "ok": true,
+        "count": 3,
+        "ids": [
+          "sample-time",
+          "sample-moved",
+          "sample-budget"
+        ],
+        "originals": [
+          "Please send the report by 3 p.m. tomorrow.",
+          "The meeting is not on Tuesday. It has moved to Thursday at 10:30 a.m.",
+          "The budget is fifteen thousand, not fifty thousand."
+        ],
+        "shellInert": true
+      }
+    },
+    {
+      "name": "3-sample-run",
+      "data": {
+        "ok": true,
+        "notice": "已注入这一句（预置文本）。看下面字幕区的原文、译文和「关键信息」卡片。",
+        "items": 1,
+        "shellInertAfterClose": false,
+        "panelClosed": true
+      }
+    },
+    {
+      "name": "4-rendered-fonts-before",
+      "data": {
+        "original": "18px",
+        "translation": "24px",
+        "romanization": "18px",
+        "romanizationText": "普利斯 塞恩德 德 瑞波尔特 拜  普姆 特莫柔",
+        "state": "ok"
+      }
+    },
+    {
+      "name": "5-adjust-translation",
+      "data": {
+        "ok": true,
+        "valuePx": "32",
+        "valueText": "32",
+        "original": "18px",
+        "translation": "32px",
+        "romanization": "18px",
+        "persisted": null
+      }
+    },
+    {
+      "name": "6-settings-after-adjust",
+      "data": {
+        "original": 18,
+        "translation": 32,
+        "romanization": 18
+      }
+    },
+    {
+      "name": "7-adjust-romanization",
+      "data": {
+        "ok": true,
+        "valuePx": "24",
+        "original": "18px",
+        "translation": "32px",
+        "romanization": "24px",
+        "romanizationVisible": true
+      }
+    },
+    {
+      "name": "8-save-state",
+      "data": {
+        "state": "saved"
+      }
+    },
+    {
+      "name": "9-history-ipc",
+      "data": {
+        "ready": true,
+        "file": "F:\\3D打印Rhino 7.0\\2026-09-30-23-01-15\\.dev\\pkg-userdata\\history.db",
+        "integrity": "ok",
+        "sessions": 1,
+        "messages": 1,
+        "listOk": true,
+        "total": 1,
+        "firstTitle": "Please send the report by 3 …",
+        "firstCount": 1,
+        "pageCount": 1,
+        "firstOriginal": "Please send the report by 3 p.m. tomorrow.",
+        "firstTranslation": "明天 / 下周",
+        "firstRomanization": "普利斯 塞恩德 德 瑞波尔特 拜  普姆 特莫柔",
+        "firstSeq": 1
+      }
+    },
+    {
+      "name": "10-high-contrast",
+      "data": {
+        "ok": true,
+        "rootBg": "rgb(0, 0, 0)",
+        "contrastValue": "high",
+        "translation": {
+          "color": "rgb(255, 255, 255)",
+          "bg": "rgba(0, 0, 0, 0)"
+        },
+        "original": {
+          "color": "rgb(255, 255, 255)",
+          "bg": "rgba(0, 0, 0, 0)"
+        }
+      }
+    },
+    {
+      "name": "11-contrast-measured",
+      "data": {
+        "rootBg": "rgb(0, 0, 0)",
+        "translation": 21,
+        "original": 21
+      }
+    },
+    {
+      "name": "12-comm-cards",
+      "data": {
+        "ok": true,
+        "shellInertWhileOpen": true,
+        "focusables": 3,
+        "focusMovedIn": true,
+        "stillInsideAfterTab": true,
+        "closedByEsc": true,
+        "shellInertAfterClose": false
+      }
+    },
+    {
+      "name": "13-records-panel",
+      "data": {
+        "ok": true,
+        "headerNow": "对话记录共 1 段 · 1 条消息 · 40 KB返回已保存打开记录文件夹导出全部← 列表1 条已加载在这段记录上继续对",
+        "detailFonts": {
+          "original": "18px",
+          "translation": "32px",
+          "romanization": "24px",
+          "expected": {
+            "original": 18,
+            "translation": 32,
+            "romanization": 24
+          }
+        },
+        "sessions": 1,
+        "saveState": "saved",
+        "headerSnippet": "对话记录共 1 段 · 1 条消息 · 40 KB返回已保存打开记录文件夹导出全部Please send the report by 3 …11-05 22:14·英语·1 条查看删除备份数据库清空全部历史记录保存在本机（F:\\3D打印Rh",
+        "detailMessages": 1,
+        "hasLoadEarlier": false
+      }
+    },
+    {
+      "name": "14-after-reload",
+      "data": {
+        "fonts": {
+          "original": 18,
+          "translation": 32,
+          "romanization": 24
+        },
+        "ready": true,
+        "sessions": 1,
+        "messages": 1,
+        "total": 1,
+        "restartHadEmptySubtitle": true,
+        "resumeCardShown": true,
+        "resumeTitle": "Please send the report by 3 …",
+        "itemsAfterResume": 1,
+        "originalAfterResume": "Please send the report by 3 p.m. tomorrow.",
+        "translationAfterResume": "明天 / 下周",
+        "romanizationAfterResume": "普利斯 塞恩德 德 瑞波尔特 拜  普姆 特莫柔"
+      }
+    },
+    {
+      "name": "done",
+      "data": {
+        "steps": 16
+      }
+    }
+  ]
+}
