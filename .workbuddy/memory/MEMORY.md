@@ -52,3 +52,10 @@ status 三态 ok/approx/unknown；界面用文字「规则近似 N 段」+虚点
 ## 未完成/不得宣称
 真实音频端到端（HTTP 402）、真实模型确认句、真实翻译质量、朗读出声（本机仅 zh 语音）、母语者读音核对（0 条）、听障使用者体验（0 人）、读屏实读、干净机安装、重装、代码签名、10 万条大库。
 材料入口 `docs/交付说明-0.6.2.md`；其余 -v0.6.2：修复与验证/测试记录表/打包核对/数据存储与备份/目标使用者体验/路演材料-5页。
+
+## 网站版（0.7.0-web.2，与桌面端并存）
+线上 `https://en-zh-caption-helper.app.workbuddy.host/?sharecode=X3A6YY6GQH`（WorkBuddy Sites，`/api/*` 也要带 sharecode 或先拿 cookie）。
+源码 `webapp/`：`web`(React+Vite，别名 `@shared`→`../../src/shared`) / `server`(FastAPI，进程内 ONNX Opus-MT + faster-whisper)。
+**发布源目录是 `F:/copilot-deploy/app`，不是工程根目录**（平台排除构建产物）：`run.py`(自读 PORT) + `server/` + `web/app/` + `mt/models/` + `server/models/`。
+`.wbapp_*.genie` 的 `localDir` 决定「目录→应用」，同一目录重发链接不变。线上 `reply=mock`（无 Key）。
+共享层 `src/shared/numeric-check.ts`（数字/时间/日期/否定/方向一致性）与 `facts.ts`（事实卡+确认句）两端共用，改动必跑 `npm run test:unit`（15 套 / 1157 条）并重建前端。
