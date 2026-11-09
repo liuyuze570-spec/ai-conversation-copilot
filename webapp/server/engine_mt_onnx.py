@@ -117,31 +117,83 @@ class _MarianOnnx:
         feeds.update(self._past(seq.shape[0], enc_hidden.shape[1]))
         return self.dec.run(["logits"], feeds)[0]
 
+    @staticmethod
+    def _ban_repeat(logits: np.ndarray, seq: np.ndarray, n: int) -> np.ndarray:
+        """禁止同一 n-gram 再次出现（no_repeat_ngram_size）。
+
+        为什么必须有这一条：这个量化模型在**极短输入**上会稳定退化，实测
+
+            hello        -> 哈哈哈哈哈哈哈哈哈
+            Good morning -> 早早早早早
+            hi           -> hi hi hi
+
+        三次都是「同一个 token 反复出」。beam search 会主动挑这种低风险的重复，
+        因为每步概率都不低、累积得分反而更好看。官方 MarianMT 的默认值是不开，
+        但那是给完整句子用的；本产品大量输入是两三个词，必须显式关掉这条路。
+
+        n=3 是折中：真正的中文重复（「谢谢，谢谢」）只有 2-gram 重复，不会被误伤；
+        而「哈哈哈哈哈哈」在第 3 个字就会被拦住。
+        """
+        if n <= 1:
+            return logits
+        before = logits.copy()
+        for row in range(seq.shape[0]):
+            tokens = seq[row].tolist()
+            if len(tokens) < n:
+                continue
+            prefix = tuple(tokens[-(n - 1):])
+            banned = set()
+            for i in range(len(tokens) - n + 1):
+                if tuple(tokens[i:i + n - 1]) == prefix:
+                    banned.add(tokens[i + n - 1])
+            for token in banned:
+                logits[row, token] = -np.inf
+        # 整行都被屏蔽时必须退回去：实测短句（「こんにちは」这类）会出现这一步所有
+        # 候选都构成 3-gram 的情况，全 -inf 之后 log_softmax 算出 nan，
+        # argmax 落到 0（EOS），译文被凭空截断。宁可重复一次，也不要截断。
+        dead = ~np.isfinite(logits).any(axis=1)
+        if dead.any():
+            logits[dead] = before[dead]
+        return logits
+
     # ---- 整句：beam search ----
     def translate(self, text: str, num_beams: int = 0,
-                  length_penalty: float = 1.0, max_new_tokens: int = 0) -> str:
+                  length_penalty: float = 1.0, max_new_tokens: int = 0,
+                  no_repeat_ngram: int = 3) -> str:
         enc = self.tok.encode(text)
         ids = np.array([enc.ids], dtype=np.int64)
         mask = np.ones_like(ids, dtype=np.int64)
         hidden = self.enc.run(None, {"input_ids": ids, "attention_mask": mask})[0]
         enc_len = ids.shape[1]
-        limit = min(max_new_tokens or self.max_len, self.max_len)
+        # 输出长度按输入自适应。
+        #
+        # 原来一律给 512，短句解码可以一路跑到几百个 token 才遇到 EOS ——
+        # 中间那段全是重复。英文 1 个词译成中文一般不超过 10 个字，
+        # 按 `词数 * 3` 给上限，多留一截余量（中文 token 比英文碎）。
+        cap = max(24, int(enc_len * 4.5) + 12)
+        limit = min(max_new_tokens or self.max_len, self.max_len, cap)
 
         beams = max(1, int(num_beams or self.num_beams))
         if beams == 1:
-            return self._greedy(hidden, mask, limit)
+            return self._greedy(hidden, mask, limit, no_repeat_ngram)
 
-        # 所有 beam 共用同一份 encoder 输出，batch 维重复即可
-        hidden_b = np.repeat(hidden, beams, axis=0)
-        mask_b = np.repeat(mask, beams, axis=0)
-        seq = np.full((beams, 1), self.decoder_start_id, dtype=np.int64)
-        scores = np.full(beams, -1e9, dtype=np.float32)
-        scores[0] = 0.0
+        # 所有 beam 共用同一份 encoder 输出；每步按**当前存活 beam 数**重复。
+        #
+        # 不能一开始就 repeat(beams) 然后不管：某个 beam 提前 EOS 之后，seq 行数
+        # 会少于 beams，而 hidden 还是 beams 行 —— 图和输入 batch 对不上，整步直接
+        # 抛异常。实测「短句 + 部分 beam 提前结束」正好会踩到。
+        seq = np.full((1, 1), self.decoder_start_id, dtype=np.int64)
+        scores = np.zeros(1, dtype=np.float32)
         done: List[tuple] = []
 
         for _ in range(limit):
-            logits = self._logits(seq, hidden_b, mask_b)[:, -1, :].astype(np.float32)
+            current = seq.shape[0]
+            hidden_c = np.repeat(hidden, current, axis=0)
+            mask_c = np.repeat(mask, current, axis=0)
+            logits = self._logits(seq, hidden_c, mask_c)[:, -1, :].astype(np.float32)
             logits[:, self.pad_id] = -np.inf  # bad_words_ids
+            logits = self._ban_repeat(logits, seq, no_repeat_ngram)
+            vocab = logits.shape[1]
             top = np.log(logits.max(axis=1, keepdims=True))
             logp = logits - (top + np.log(np.exp(logits - top).sum(axis=1, keepdims=True)))
             cand = (scores[:, None] + logp).reshape(-1)
@@ -151,7 +203,7 @@ class _MarianOnnx:
 
             rows, new_scores = [], []
             for idx in flat:
-                bi, token = divmod(int(idx), cand.size // beams)
+                bi, token = divmod(int(idx), vocab)
                 score = float(cand[idx])
                 if token == self.eos_id:
                     done.append((score, seq[bi, 1:].tolist()))
@@ -177,11 +229,15 @@ class _MarianOnnx:
         _, best = max(done, key=norm)
         return self.tok.decode(best, skip_special_tokens=True).strip()
 
-    def _greedy(self, hidden: np.ndarray, mask: np.ndarray, limit: int) -> str:
+    def _greedy(self, hidden: np.ndarray, mask: np.ndarray, limit: int,
+                no_repeat_ngram: int = 3) -> str:
         out: List[int] = []
         seq = [self.decoder_start_id]
         for _ in range(limit):
-            logits = self._logits(np.array([seq], dtype=np.int64), hidden, mask)[0, -1, :]
+            logits = self._logits(np.array([seq], dtype=np.int64), hidden, mask)[0, -1, :].astype(np.float32)
+            logits[self.pad_id] = -np.inf
+            logits = self._ban_repeat(logits[None, :], np.array([seq], dtype=np.int64),
+                                      no_repeat_ngram)[0]
             nxt = int(np.argmax(logits))
             if nxt == self.eos_id or nxt == self.pad_id:
                 break

@@ -1,7 +1,14 @@
-"""回复建议：云端模型（真实）／固定模板（明确标注，不冒充模型）。
+"""回复建议：云端模型（真实）／人工模板（明确标注，不冒充模型）。
 
-模板只用于「这句我听清了 / 我需要再确认」这类场景，条数很少 ——
-界面上要写成「模板句」，不能写成 AI 生成。
+两种来源的界线必须清楚：
+- `provider`：模型生成的句子，界面写「AI 生成」；
+- `mock`：人工写死的模板句，界面写「模板句」——它同样有用，但它不是 AI。
+
+为什么模板也给三条而不是一条：听障使用者真正需要的是**选择**。
+一条「好的，谢谢」既不能确认理解、也不能请对方打字，等于把问题原样还给他。
+
+安全底线（模板与模型提示词里都写了）：不替用户答应任何事、不编造事实。
+所以模板里没有「Yes, that works for me」这类替人拍板的句子。
 """
 
 from __future__ import annotations
@@ -10,7 +17,7 @@ import json
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 
@@ -31,6 +38,8 @@ class ReplyResult:
     meaning: str
     mode: str
     elapsed_ms: int
+    #: 一到三条候选。`reply` 保留为第一条，兼容只读一个字段的旧调用方。
+    suggestions: list[dict] = field(default_factory=list)
 
 
 class ProviderReply:
@@ -47,8 +56,12 @@ class ProviderReply:
         started = time.perf_counter()
         system = (
             "You help a hard-of-hearing user reply in English. Given what the other person said, "
-            "propose ONE short, polite English sentence the user could say, plus its Chinese meaning. "
-            "Do not invent facts. Return strict JSON: {\"reply\": \"...\", \"meaning\": \"...\"}."
+            "propose THREE short, polite English sentences the user could say, plus the Chinese "
+            "meaning of each. Each must be usable as-is in a real conversation.\n"
+            "Rules: never invent facts; never promise or agree on the user's behalf "
+            "(no 'Yes, that works for me' unless the other person only asked whether the user heard them); "
+            "prefer asking the other person to type, repeat, or confirm.\n"
+            'Return strict JSON: {"replies":[{"reply":"...","meaning":"...","kind":"confirm|repeat|ask"}]}'
         )
         payload = {
             "model": self.model,
@@ -72,35 +85,87 @@ class ProviderReply:
         try:
             content = response.json()["choices"][0]["message"]["content"]
             data = json.loads(content)
-            reply = str(data["reply"]).strip()
-            meaning = str(data["meaning"]).strip()
+            items = data.get("replies") or []
+            suggestions = []
+            for item in items[:3]:
+                reply = str(item.get("reply", "")).strip()
+                meaning = str(item.get("meaning", "")).strip()
+                if not reply:
+                    continue
+                suggestions.append(
+                    {"reply": reply, "meaning": meaning, "kind": str(item.get("kind", "confirm"))}
+                )
+            if not suggestions:
+                raise ValueError("empty")
         except Exception as error:
             raise ReplyError("UPSTREAM_ERROR", 502) from error
+        first = suggestions[0]
         return ReplyResult(
-            reply=reply,
-            meaning=meaning,
+            reply=first["reply"],
+            meaning=first["meaning"],
             mode=self.mode,
             elapsed_ms=int((time.perf_counter() - started) * 1000),
+            suggestions=suggestions,
         )
 
 
+#: 四条「安全句」。共同点：都不替用户答应、不编造事实，且都能在真实对话里直接说。
+TEMPLATE_LINES = {
+    "repeat": ("Could you type that in the chat? I'm hard of hearing.", "你能打在聊天框里吗？我听力不太好。"),
+    "confirm": ("Let me make sure I got that right.", "我确认一下我没听错。"),
+    "ask": ("Let me check and get back to you.", "我查一下再回复你。"),
+    "thanks": ("Got it, thanks. I'll follow up if anything is unclear.", "明白了，谢谢。有不清楚的我再问。"),
+}
+
+
+def _is_question(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    # 各语言都可能用半角 / 全角问号；问号是最可靠的判据，词首判据只作补充。
+    if stripped.endswith(("?", "？")):
+        return True
+    head = stripped.lower()
+    return head.startswith(
+        ("what", "why", "how", "when", "where", "who", "can ", "could ", "do ", "does ", "are ", "is ")
+    )
+
+
+def _has_correction(text: str) -> bool:
+    lower = text.lower()
+    return any(
+        token in lower
+        for token in ("not ", "n't", "instead", "moved", "changed", "actually", "ではなく", "아니", "не ")
+    )
+
+
 class TemplateReply:
+    """人工模板。三条按场景排序，`mode="mock"`，界面必须标「模板句」。"""
+
     mode = "mock"
     available = True
     detail = "模板句（没有可用模型，界面上要标成模板）"
 
     def reply(self, text: str, translation: str) -> ReplyResult:
-        lower = text.lower()
-        if "?" in text or "could you" in lower or "can you" in lower:
-            reply = "Could you say that once more, a little slower?"
-            meaning = "能再说一遍吗？慢一点。"
-        elif "not" in lower or "instead" in lower or "moved" in lower:
-            reply = "Let me repeat that to make sure I got it right."
-            meaning = "我重复一遍，确认我没听错。"
+        if _has_correction(text) or _has_correction(translation):
+            order = ["confirm", "repeat", "thanks"]
+        elif _is_question(text):
+            order = ["ask", "repeat", "confirm"]
         else:
-            reply = "Got it, thanks. I'll follow up if anything is unclear."
-            meaning = "明白了，谢谢。有不清楚的我再问。"
-        return ReplyResult(reply=reply, meaning=meaning, mode=self.mode, elapsed_ms=0)
+            order = ["thanks", "repeat", "confirm"]
+
+        suggestions = [
+            {"reply": TEMPLATE_LINES[key][0], "meaning": TEMPLATE_LINES[key][1], "kind": key}
+            for key in order
+        ]
+        first = suggestions[0]
+        return ReplyResult(
+            reply=first["reply"],
+            meaning=first["meaning"],
+            mode=self.mode,
+            elapsed_ms=0,
+            suggestions=suggestions,
+        )
 
 
 def build_reply_chain() -> tuple[list[object], dict[str, str]]:

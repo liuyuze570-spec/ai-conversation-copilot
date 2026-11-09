@@ -8,6 +8,8 @@ import {
   translate as apiTranslate,
   withSession,
   type Health,
+  type SourceLanguage,
+  type ReplySuggestion,
   type TranslateMode,
   type TranscribeMode,
 } from './api';
@@ -42,11 +44,21 @@ interface State {
    */
   sessionState: 'pending' | 'ready' | 'failed';
   sessionError: string | null;
+  /** 对方说的是哪种语言。中文永远在译文一侧，这里只管源语言。 */
+  sourceLang: SourceLanguage;
   stage: Stage;
   notice: Notice | null;
   original: string;
   translation: string;
   translateMode: TranslateMode | 'preset' | null;
+  /** 常用语库命中时：整句译文还是单词词义。 */
+  translateNote: 'sentence' | 'word' | null;
+  /** 命中来自拼写变体（hellow → hello），界面要说明「按 hello 理解」。 */
+  translateCorrected: boolean;
+  /** 命中的归一化写法，用来在提示里点名。 */
+  translateMatched: string | null;
+  /** 日/韩/俄走「→英→中」两级时，中间那句英语（用于说明转译路径）。 */
+  translateVia: string | null;
   transcribeMode: TranscribeMode | null;
   source: SourceKind | null;
   /** 真实耗时，来自后端；预置样例没有这个值。 */
@@ -63,14 +75,17 @@ interface State {
   numericCheck: NumericCheck | null;
   replyText: string;
   replyMode: TranslateMode | null;
+  /** 三条候选回复。第一条与 replyText 相同，保留后者兼容旧渲染。 */
+  replies: ReplySuggestion[];
   version: number;
 
   init: () => Promise<void>;
   retrySession: () => Promise<void>;
   setOriginal: (text: string) => void;
+  setSourceLang: (lang: SourceLanguage) => void;
   translate: (text: string, source: SourceKind, presetTranslation?: string) => Promise<void>;
   transcribe: (blob: Blob, filename: string) => Promise<void>;
-  askReply: () => Promise<void>;
+  askReply: (silent?: boolean) => Promise<void>;
   editFact: (id: string, value: string) => void;
   speakFact: (id: string, value: string) => void;
   toggleFact: (id: string) => void;
@@ -109,6 +124,13 @@ function describe(error: unknown): string {
       case 'SESSION_REQUIRED':
         // 能走到这里说明「重建会话 + 重试一次」都没成，所以不再让用户刷新了事。
         return '服务端没能确认这次访问的匿名会话（已自动重建重试一次）。输入内容还在，点「重试」再发一次；仍然不行就是服务端在重启，稍等再试。';
+      case 'TRANSLATE_FAILED':
+        /*
+         * 模型跑了，但输出退化成重复（`hello → 哈哈哈哈哈哈哈哈哈`）或原样吐回。
+         * 这种结果宁可不给：听障使用者看到「哈哈哈哈哈」会以为对方真在笑。
+         * 文案要给出可以马上做的事，而不是只说「失败」。
+         */
+        return '这句模型没翻出来（输出退化成重复）。换一种说法、把句子写完整，或者点「重试一次」。';
       case 'UPSTREAM_TIMEOUT':
         return '上游模型超时。可以重试一次；连续超时就先用文字输入。';
       case 'UPSTREAM_ERROR':
@@ -126,11 +148,16 @@ export const useApp = create<State>((set, get) => ({
   healthError: null,
   sessionState: 'pending',
   sessionError: null,
+  sourceLang: 'en',
   stage: 'idle',
   notice: null,
   original: '',
   translation: '',
   translateMode: null,
+  translateNote: null,
+  translateCorrected: false,
+  translateMatched: null,
+  translateVia: null,
   transcribeMode: null,
   source: null,
   elapsedMs: null,
@@ -140,6 +167,7 @@ export const useApp = create<State>((set, get) => ({
   numericCheck: null,
   replyText: '',
   replyMode: null,
+  replies: [],
   version: 0,
 
   init: async () => {
@@ -165,6 +193,40 @@ export const useApp = create<State>((set, get) => ({
 
   setOriginal: (text) => set({ original: text }),
 
+  /*
+   * 切换源语言要清场。
+   *
+   * 日语原文配着英语读音、或者上一条中文译文留在屏幕上，都是「这条字幕是哪种
+   * 语言」的谎。切语言等于换了一个任务，旧结果一律作废，让用户重新提交。
+   */
+  setSourceLang: (lang) => {
+    if (get().sourceLang === lang) return;
+    cancelInflight();
+    set({
+      version: get().version + 1,
+      sourceLang: lang,
+      stage: 'idle',
+      original: '',
+      translation: '',
+      translateMode: null,
+      translateNote: null,
+      translateCorrected: false,
+      translateMatched: null,
+      translateVia: null,
+      transcribeMode: null,
+      source: null,
+      facts: [],
+      plan: null,
+      numericCheck: null,
+      replyText: '',
+      replyMode: null,
+      replies: [],
+      elapsedMs: null,
+      requestId: null,
+      notice: null,
+    });
+  },
+
   translate: async (text, source, presetTranslation) => {
     const next = get().version + 1;
     cancelInflight();
@@ -175,6 +237,10 @@ export const useApp = create<State>((set, get) => ({
       original: text,
       translation: '',
       translateMode: null,
+      translateNote: null,
+      translateCorrected: false,
+      translateMatched: null,
+      translateVia: null,
       source,
       elapsedMs: null,
       requestId: null,
@@ -183,6 +249,7 @@ export const useApp = create<State>((set, get) => ({
       numericCheck: null,
       replyText: '',
       replyMode: null,
+      replies: [],
     });
 
     if (presetTranslation) {
@@ -200,12 +267,19 @@ export const useApp = create<State>((set, get) => ({
     const controller = new AbortController();
     inflight = controller;
     try {
-      const result = await withSession(() => apiTranslate(text, controller.signal), controller.signal);
+      const result = await withSession(
+        () => apiTranslate(text, controller.signal, get().sourceLang),
+        controller.signal,
+      );
       if (get().version !== next) return;
       set({
         stage: 'idle',
         translation: result.translation,
         translateMode: result.mode,
+        translateNote: result.note ?? null,
+        translateCorrected: Boolean(result.corrected),
+        translateMatched: result.matched ?? null,
+        translateVia: result.via ?? null,
         elapsedMs: result.elapsed_ms,
         requestId: result.request_id,
         facts: analyze(text, result.translation),
@@ -217,6 +291,14 @@ export const useApp = create<State>((set, get) => ({
           .then((health) => set({ health, healthError: null }))
           .catch(() => {});
       }
+      /*
+       * 翻译一出来，立刻自动生成一轮回复建议。
+       *
+       * 这就是「及时回复」：对方说完 → 字幕出来 → 同时就有三句能回的话，
+       * 不用再点一次按钮。失败时静默（`silent`）：用户没要求过它，
+       * 弹一条「回复次数用完了」只会让他在最需要信息的时候分心。
+       */
+      void get().askReply(true);
     } catch (error) {
       if (get().version !== next) return;
       if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -237,11 +319,16 @@ export const useApp = create<State>((set, get) => ({
       plan: null,
       translation: '',
       translateMode: null,
+      translateNote: null,
+      translateCorrected: false,
+      translateMatched: null,
+      translateVia: null,
       transcribeMode: null,
       elapsedMs: null,
       requestId: null,
       replyText: '',
       replyMode: null,
+      replies: [],
     });
     const controller = new AbortController();
     inflight = controller;
@@ -270,7 +357,11 @@ export const useApp = create<State>((set, get) => ({
     }
   },
 
-  askReply: async () => {
+  /*
+   * 回复建议。`silent=true` 时不写错误提示 —— 翻译完成后会自动调一次，
+   * 那条路径上弹「回复次数用完了」只会打扰用户，他本来也没打算要回复建议。
+   */
+  askReply: async (silent = false) => {
     const { original, translation, version } = get();
     if (!original.trim()) return;
     const next = version + 1;
@@ -288,11 +379,14 @@ export const useApp = create<State>((set, get) => ({
         stage: 'idle',
         replyText: result.reply,
         replyMode: result.mode,
+        replies: result.suggestions?.length
+          ? result.suggestions
+          : [{ reply: result.reply, meaning: result.meaning, kind: 'confirm' }],
       });
     } catch (error) {
       if (get().version !== next) return;
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      set({ stage: 'idle', notice: { kind: 'error', text: describe(error) } });
+      set(silent ? { stage: 'idle' } : { stage: 'idle', notice: { kind: 'error', text: describe(error) } });
     } finally {
       if (inflight === controller) inflight = null;
     }
@@ -319,6 +413,10 @@ export const useApp = create<State>((set, get) => ({
       original: '',
       translation: '',
       translateMode: null,
+      translateNote: null,
+      translateCorrected: false,
+      translateMatched: null,
+      translateVia: null,
       transcribeMode: null,
       source: null,
       facts: [],
@@ -326,6 +424,7 @@ export const useApp = create<State>((set, get) => ({
       numericCheck: null,
       replyText: '',
       replyMode: null,
+      replies: [],
       elapsedMs: null,
       requestId: null,
       notice: null,

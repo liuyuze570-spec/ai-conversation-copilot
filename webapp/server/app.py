@@ -31,11 +31,14 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from engine_asr import ASRError, build_asr_chain, choose_asr, probe_seconds
-from engine_mt import UpstreamError, build_mt_chain, choose_mt
+from engine_mt import MTResult, UpstreamError, build_mt_chain, choose_mt
+from engine_mt_multi import build_cascade, supported_codes
+from engine_mt_onnx import OnnxOpusMT
 from engine_reply import ReplyError, build_reply_chain, choose_reply
+from phrasebook import lookup as phrase_lookup, looks_degenerate
 
-VERSION = "0.7.0-web.4"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
-BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web4-2026-11-09")
+VERSION = "0.7.0-web.5"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
+BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web5-2026-11-09")
 # 每个进程一个短 ID：用来判「请求是不是被不同实例/重启后的进程接走的」。
 # 不含任何用户数据，可以安全地出现在 /api/health 里。
 BOOT_ID = secrets.token_hex(4)
@@ -45,7 +48,9 @@ MAX_AUDIO_MB = float(os.getenv("COPILOT_MAX_AUDIO_MB", "8"))
 MAX_AUDIO_SECONDS = int(os.getenv("COPILOT_MAX_AUDIO_SECONDS", "60"))
 QUOTA_TRANSLATE = int(os.getenv("COPILOT_QUOTA_TRANSLATE", "40"))
 QUOTA_TRANSCRIBE = int(os.getenv("COPILOT_QUOTA_TRANSCRIBE", "10"))
-QUOTA_REPLY = int(os.getenv("COPILOT_QUOTA_REPLY", "15"))
+# 回复配额与翻译同额：翻译完成后会自动生成一轮回复建议，
+# 若只给 15 次，用户翻到一半就没有回复建议了 —— 那是核心功能，不是附加项。
+QUOTA_REPLY = int(os.getenv("COPILOT_QUOTA_REPLY", "40"))
 SESSION_TTL = int(os.getenv("COPILOT_SESSION_TTL", "7200"))
 RATE_PER_MIN = int(os.getenv("COPILOT_RATE_PER_MIN", "30"))
 REAL_DISABLED = os.getenv("COPILOT_REAL_DISABLED") == "1"
@@ -183,10 +188,15 @@ def mark_runtime(kind: str, error_code: str | None = None) -> None:
             slot["ok"] = int(slot["ok"]) + 1
 MT_CHAIN: list[object] = []
 MT_DETAIL: dict[str, str] = {}
+#: 多语言（日/韩/俄）→ 英 → 中 的级联链，按语言代码索引。
+#: 只装本机真的有模型的那几种；`/api/health` 如实报告，不假装支持。
+MT_CASCADE: dict[str, object] = {}
 ASR_CHAIN: list[object] = []
 ASR_DETAIL: dict[str, str] = {}
 REPLY_CHAIN: list[object] = []
 REPLY_DETAIL: dict[str, str] = {}
+
+SUPPORTED_SOURCE = {"en": "英语", "ja": "日语", "ko": "韩语", "ru": "俄语"}
 
 
 @app.on_event("startup")
@@ -209,6 +219,22 @@ def startup() -> None:
             LOG.info("mt warmup %s", json.dumps(warmup(), ensure_ascii=False))
         except Exception as exc:  # noqa: BLE001 - 预热失败不影响启动，下次请求再试
             LOG.warning("mt warmup failed: %s", type(exc).__name__)
+    _build_cascades(chosen)
+
+
+def _build_cascades(zh_engine: object | None) -> None:
+    """把本机装了的日/韩/俄模型接成级联。没有模型就不建，不占内存也不用假的顶上。"""
+    if not isinstance(zh_engine, OnnxOpusMT):
+        LOG.info("cascade=skipped (no local en→zh engine)")
+        return
+    for code in supported_codes():
+        try:
+            MT_CASCADE[code] = build_cascade(code, zh_engine)
+            LOG.info("cascade %s -> %s", code, MT_CASCADE[code].detail)  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001 - 单个语种坏了不影响其它
+            LOG.warning("cascade %s failed: %s", code, type(exc).__name__)
+    if MT_CASCADE:
+        LOG.info("cascade ready: %s", ",".join(sorted(MT_CASCADE)))
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -260,6 +286,60 @@ def backend_or_none(chain: list[object]) -> object | None:
         if getattr(item, "available", False):
             return item
     return None
+
+
+def translate_with_chain(text: str) -> tuple[MTResult | None, list[str], UpstreamError | None]:
+    """按链逐路翻译，**跳过退化输出**。
+
+    以前只取第一个可用后端，拿到什么就返回什么。实测本地模型在极短输入上会
+    退化成 `哈哈哈哈哈哈哈哈哈`、`hi hi hi`，而界面把它当「翻译完成」展示 ——
+    对听障使用者来说，这比明确失败更危险：他会以为对方就是这么说的。
+
+    现在：这一路退化就记一笔原因，继续试下一路；全都不行才报错。
+    返回的 `failures` 只含「模式 + 错误码」，不含任何正文。
+    """
+    failures: list[str] = []
+    last_error: UpstreamError | None = None
+    for backend in MT_CHAIN:
+        mode = getattr(backend, "mode", "?")
+        if REAL_DISABLED and mode != "mock":
+            continue
+        if not getattr(backend, "available", False):
+            continue
+        try:
+            result = backend.translate(text)  # type: ignore[attr-defined]
+        except UpstreamError as failure:
+            failures.append(f"{mode}:{failure.code}")
+            last_error = failure
+            continue
+        bad, why = looks_degenerate(text, result.translation)
+        if bad:
+            failures.append(f"{mode}:{why}")
+            continue
+        return result, failures, None
+    return None, failures, last_error
+
+
+def translate_cascade(
+    code: str, text: str
+) -> tuple[MTResult | None, list[str], UpstreamError | None]:
+    """日/韩/俄：源语言 → 英语 → 中文。模型没装就明确说没装。
+
+    退化判据对非拉丁源语言要放宽：`looks_degenerate` 的「原样吐回」和「长度失控」
+    两条是按英文单词数算的，日语/韩语没有空格，套上去会误判成退化。
+    """
+    cascade = MT_CASCADE.get(code)
+    if cascade is None:
+        return None, [], UpstreamError("LANGUAGE_NOT_READY", 503)
+    try:
+        result = cascade.translate(text)  # type: ignore[attr-defined]
+    except UpstreamError as failure:
+        return None, [f"{code}:{failure.code}"], failure
+    bad, why = looks_degenerate(text, result.translation, latin_source=False)
+    if bad:
+        return None, [f"{code}:{why}"], None
+    result.via = getattr(cascade, "last_via", None)  # type: ignore[attr-defined]
+    return result, [], None
 
 
 SESSION_HEADER = "x-session-id"
@@ -362,6 +442,22 @@ def health() -> dict:
         # 配了一个错 Key 时 real 仍是 true，所以两者必须分开看。
         "verified": {kind: int(slot["ok"]) > 0 for kind, slot in RUNTIME.items()},
         "runtime": RUNTIME,
+        # 翻译语言支持：英语是直译，日/韩/俄是「→英→中」两级。
+        # 界面据此禁用没装好模型的语种，而不是让用户点了才发现不行。
+        "languages": {
+            "source": {
+                "en": {"ready": True, "pipeline": "en-zh", "label": "英语"},
+                **{
+                    code: {
+                        "ready": code in MT_CASCADE,
+                        "pipeline": f"{code}-en-zh" if code in MT_CASCADE else None,
+                        "label": SUPPORTED_SOURCE[code],
+                    }
+                    for code in ("ja", "ko", "ru")
+                },
+            },
+            "target": ["zh"],
+        },
         "notes": notes,
     }
 
@@ -417,41 +513,100 @@ def translate(request: Request, body: TranslateBody) -> JSONResponse:
         return error(request, "BAD_REQUEST", 400, "文本为空")
     if len(text) > MAX_CHARS:
         return error(request, "TOO_LARGE", 413, f"文本超过 {MAX_CHARS} 字")
-    if body.source_language != "en" or body.target_language != "zh":
-        return error(request, "BAD_REQUEST", 400, "这版只做英语 → 中文")
+    src = (body.source_language or "en").lower()
+    if src not in SUPPORTED_SOURCE:
+        return error(request, "BAD_REQUEST", 400, f"不支持的语言：{src}（支持 英/日/韩/俄）")
+    if body.target_language != "zh":
+        return error(request, "BAD_REQUEST", 400, "这版只翻成中文")
 
     if not STORE.spend(session, "translate"):
         return error(request, "QUOTA_EXCEEDED", 429, "本次会话的翻译次数用完了")
 
-    backend = backend_or_none(MT_CHAIN)
-    if backend is None:
-        return error(request, "NOT_CONFIGURED", 503, "服务端没有可用的翻译能力")
-    try:
-        result = backend.translate(text)  # type: ignore[attr-defined]
-    except UpstreamError as failure:
-        mark_runtime("translate", failure.code)
-        if failure.code == "MODE_DISABLED":
+    # 第一路：常用语与术语库。每种源语言查自己的那张表 —— 英文 391 句、
+    # 日/韩/俄各 30 来句问候。拿英文表去匹配日语原文只会误命中。
+    hit = phrase_lookup(text, src)
+    if hit is not None:
+        mark_runtime("translate")
+        STORE.bump("translate")
+        LOG.info(
+            "translate id=%s lang=%s mode=phrasebook kind=%s chars=%d",
+            request.state.request_id,
+            src,
+            hit.kind,
+            len(text),
+        )
+        return JSONResponse(
+            {
+                "request_id": request.state.request_id,
+                "translation": hit.translation,
+                "mode": "phrasebook",
+                "note": hit.kind,
+                "corrected": hit.corrected,
+                # 命中的归一化写法（hellow → hello）。是用户自己输入内容的规范化，
+                # 不含任何服务端信息，可以直接回显给界面说明「按哪个词查的」。
+                "matched": hit.key,
+                "source_language": src,
+                "target_language": "zh",
+                "elapsed_ms": 0,
+            }
+        )
+
+    if src == "en":
+        result, failures, last_error = translate_with_chain(text)
+    else:
+        result, failures, last_error = translate_cascade(src, text)
+    if result is None:
+        if last_error is not None and last_error.code == "LANGUAGE_NOT_READY":
+            mark_runtime("translate", "LANGUAGE_NOT_READY")
+            return error(
+                request,
+                "LANGUAGE_NOT_READY",
+                503,
+                f"{SUPPORTED_SOURCE[src]}翻译模型没有装好，这版还不能翻这一种",
+            )
+        if last_error is not None and last_error.code == "MODE_DISABLED":
+            mark_runtime("translate", "MODE_DISABLED")
             return error(request, "NO_PRESET", 503, "演示模式下没有这句的预置译文")
-        return error(request, failure.code, failure.status, "上游模型失败")
+        if last_error is not None and last_error.code in {"UPSTREAM_ERROR", "UPSTREAM_TIMEOUT"}:
+            mark_runtime("translate", last_error.code)
+            return error(request, last_error.code, last_error.status, "上游模型失败")
+        # 模型能跑，但输出退化成重复/原样吐回 —— 不能当成功返回。
+        mark_runtime("translate", "TRANSLATE_FAILED")
+        LOG.warning("translate degenerate lang=%s routes=%s", src, ", ".join(failures) or "none")
+        return error(
+            request,
+            "TRANSLATE_FAILED",
+            422,
+            "这句模型没有翻出来（输出退化），换一种说法或稍后重试",
+        )
     mark_runtime("translate")
     STORE.bump("translate")
     LOG.info(
-        "translate id=%s mode=%s chars=%d ms=%d",
+        "translate id=%s lang=%s mode=%s chars=%d ms=%d routes=%s",
         request.state.request_id,
+        src,
         result.mode,
         len(text),
         result.elapsed_ms,
+        ", ".join(failures) or "-",
     )
-    return JSONResponse(
-        {
-            "request_id": request.state.request_id,
-            "translation": result.translation,
-            "mode": result.mode,
-            "source_language": "en",
-            "target_language": "zh",
-            "elapsed_ms": result.elapsed_ms,
-        }
-    )
+    payload = {
+        "request_id": request.state.request_id,
+        "translation": result.translation,
+        "mode": result.mode,
+        "skipped": failures,
+        "source_language": src,
+        "target_language": "zh",
+        "elapsed_ms": result.elapsed_ms,
+    }
+    if src != "en":
+        # 中转英语要回去：两级翻译出问题时，使用者/我们能看出是哪一级坏的；
+        # 对学语言的人也确实有用（能对照中间那句英语）。
+        payload["pipeline"] = f"{src}-en-zh"
+        payload["via"] = getattr(result, "via", None) or getattr(
+            MT_CASCADE.get(src), "last_via", None
+        )
+    return JSONResponse(payload)
 
 
 @app.post("/api/transcribe")
@@ -556,6 +711,11 @@ def reply(request: Request, body: ReplyBody) -> JSONResponse:
             "reply": result.reply,
             "meaning": result.meaning,
             "mode": result.mode,
+            # 三条候选：一条「请对方打字/重复」、一条「确认理解」、一条场景回应。
+            # 只给一条会逼使用者接受一个不该由程序替他做的选择。
+            "suggestions": result.suggestions or [
+                {"reply": result.reply, "meaning": result.meaning, "kind": "confirm"}
+            ],
             "elapsed_ms": result.elapsed_ms,
         }
     )

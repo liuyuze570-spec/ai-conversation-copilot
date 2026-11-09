@@ -1,0 +1,878 @@
+{
+  "at": "2026-11-09T12:04:56",
+  "cases_file": "C:\\Users\\25344\\Documents\\Codex\\2026-11-08\\referenced-chatgpt-conversation-this-is-an\\outputs\\95分目标改进\\模型对照测试30例.json",
+  "case_count": 30,
+  "backends": [
+    "local-onnx"
+  ],
+  "provider_model": null,
+  "disclaimer": "flags 是关键词/数字的机器初筛，只用于提示人工重点复核，不是正确率评分；金额、时间、日期、否定与更正关系必须人工按 reference_meaning_zh 判断。",
+  "flag_total": 3,
+  "failure_total": 0,
+  "records": [
+    {
+      "id": "MQ01",
+      "category": "money_quantity",
+      "input": "Six notebooks cost 27 euros in total; the 5-euro delivery charge is separate.",
+      "reference_meaning_zh": "六本笔记本合计27欧元，另收5欧元运费。",
+      "critical_expected_facts": {
+        "current": [
+          "笔记本数量为6本",
+          "笔记本合计价为27欧元",
+          "运费另计5欧元"
+        ],
+        "negated": []
+      },
+      "must_not_invent": {
+        "currency": "保留欧元，不换算或改成其他币种。",
+        "date": "没有交货日期，不补具体日期。",
+        "direction": "5欧元是另计运费，不是已包含在27欧元内。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "六本笔记本总共花费27欧元;5欧元交货费是分开的。",
+          "elapsed_ms": 915,
+          "wall_ms": 1937,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MQ02",
+      "category": "money_quantity",
+      "input": "Set aside forty-eight name badges for the workshop, not eighty-four.",
+      "reference_meaning_zh": "为工作坊预留48张姓名牌，不是84张。",
+      "critical_expected_facts": {
+        "current": [
+          "需要预留48张姓名牌"
+        ],
+        "negated": [
+          "预留84张姓名牌"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有金额或币种，不增加费用。",
+        "date": "没有活动日期，不增加日期。",
+        "direction": "48与84不能颠倒，否定作用于84。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "为讲习班预留48个名字徽章,而不是84个。",
+          "elapsed_ms": 781,
+          "wall_ms": 781,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MQ03",
+      "category": "money_quantity",
+      "input": "Each of the three cartons holds twelve glass jars.",
+      "reference_meaning_zh": "共有三只纸箱，每箱装十二个玻璃罐。",
+      "critical_expected_facts": {
+        "current": [
+          "纸箱数量为3只",
+          "每箱装12个玻璃罐"
+        ],
+        "negated": []
+      },
+      "must_not_invent": {
+        "currency": "没有价格或币种，不增加价格。",
+        "date": "没有日期，不增加送达时间。",
+        "direction": "12是每箱数量，不能说成三箱总共只有12个。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "这三个箱中每个都装有12个玻璃罐。",
+          "elapsed_ms": 726,
+          "wall_ms": 726,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MQ04",
+      "category": "money_quantity",
+      "input": "The refund is £8.75, and it should go to the original card.",
+      "reference_meaning_zh": "退款金额为8.75英镑，应退回原来的银行卡。",
+      "critical_expected_facts": {
+        "current": [
+          "退款为8.75英镑",
+          "应退款至原银行卡，尚未说明已完成退款"
+        ],
+        "negated": []
+      },
+      "must_not_invent": {
+        "currency": "£为英镑，不改成人民币或美元。",
+        "date": "没有退款到账日期，不承诺到账时间。",
+        "direction": "是退款而非另行收费；原卡不是新卡或现金。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "退款是8.75英镑,应该转到原来的卡片上",
+          "elapsed_ms": 691,
+          "wall_ms": 691,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MQ05",
+      "category": "money_quantity",
+      "input": "I reserved nine chairs, but only seven have arrived so far.",
+      "reference_meaning_zh": "我预订了九把椅子，但到目前为止只到了七把。",
+      "critical_expected_facts": {
+        "current": [
+          "预订数量为9把",
+          "目前到货数量为7把"
+        ],
+        "negated": [
+          "九把椅子已经全部到货"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有价格或币种，不增加费用。",
+        "date": "没有剩余椅子的送达日期，不编到货时间。",
+        "direction": "预订9把和已到7把同时成立；不能把预订数量改为7把。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "我预留了九把椅子 但到目前为止只有七把",
+          "elapsed_ms": 694,
+          "wall_ms": 694,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MQ06",
+      "category": "money_quantity",
+      "input": "Charge 2,460 yen for the set of four cups, not for each cup.",
+      "reference_meaning_zh": "四只杯子一套收2460日元，不是每只杯子收2460日元。",
+      "critical_expected_facts": {
+        "current": [
+          "一套含4只杯子",
+          "整套价格为2460日元"
+        ],
+        "negated": [
+          "每只杯子的价格为2460日元"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "保留日元，不换成其他币种。",
+        "date": "没有日期，不添加付款期限。",
+        "direction": "按整套计价而非按只计价，不扩大为四倍总价。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "一套四个杯子的2 460日圆, 不是每个杯子。",
+          "elapsed_ms": 863,
+          "wall_ms": 863,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MQ07",
+      "category": "money_quantity",
+      "input": "We need 0.75 kilograms of flour and 250 grams of sugar.",
+      "reference_meaning_zh": "我们需要0.75千克面粉和250克糖。",
+      "critical_expected_facts": {
+        "current": [
+          "面粉为0.75千克，正确等值表达750克可接受",
+          "糖为250克"
+        ],
+        "negated": []
+      },
+      "must_not_invent": {
+        "currency": "没有金额或币种，不增加价格。",
+        "date": "没有日期，不添加采购日期。",
+        "direction": "不能把千克与克、面粉与糖的数量对应关系颠倒。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "我们需要0.75公斤面粉和250克糖",
+          "elapsed_ms": 542,
+          "wall_ms": 542,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MQ08",
+      "category": "money_quantity",
+      "input": "Use the coupon for a 15 percent discount; it does not take 15 dollars off.",
+      "reference_meaning_zh": "使用优惠券可减免15%，不是直接减免15美元。",
+      "critical_expected_facts": {
+        "current": [
+          "折扣为减免原价的15%，即支付原价的85%"
+        ],
+        "negated": [
+          "固定减免15美元"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "美元仅出现在被否定的说法中，不能据此认定商品实际以美元计价。",
+        "date": "没有优惠券到期日，不编有效期。",
+        "direction": "减免15%不等于支付原价15%；不能把百分比折扣改成固定金额。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "折价15%使用优惠券;它不扣除15美元。",
+          "elapsed_ms": 827,
+          "wall_ms": 827,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MQ09",
+      "category": "money_quantity",
+      "input": "Of the twenty-six posters, eighteen are blue and the rest are green.",
+      "reference_meaning_zh": "26张海报中，18张是蓝色，其余是绿色。",
+      "critical_expected_facts": {
+        "current": [
+          "海报共26张",
+          "蓝色海报18张",
+          "其余海报为绿色；若计算为8张也正确"
+        ],
+        "negated": []
+      },
+      "must_not_invent": {
+        "currency": "没有价格或币种，不增加费用。",
+        "date": "没有日期，不添加张贴日期。",
+        "direction": "18张对应蓝色；绿色是剩余部分，不是另加26张。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "在26张海报中,18张是蓝色的,其余是绿色的",
+          "elapsed_ms": 791,
+          "wall_ms": 791,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MQ10",
+      "category": "money_quantity",
+      "input": "The deposit is 300 and the remaining balance is 900.",
+      "reference_meaning_zh": "订金为300，剩余应付余额为900。",
+      "critical_expected_facts": {
+        "current": [
+          "订金金额为300",
+          "剩余余额为900",
+          "原文未注明币种"
+        ],
+        "negated": []
+      },
+      "must_not_invent": {
+        "currency": "不自行添加人民币、美元、欧元等币种。",
+        "date": "没有付款期限，不添加日期。",
+        "direction": "300是订金，900是余款；不能说900是已付总额。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "存款300美元,剩余余额900美元。",
+          "elapsed_ms": 520,
+          "wall_ms": 520,
+          "flags": [
+            "译文出现原文没有的币种「美元」",
+            "译文出现原文没有的币种「元」"
+          ]
+        }
+      }
+    },
+    {
+      "id": "DT01",
+      "category": "dates_times",
+      "input": "The museum tour begins at 8:25 a.m. on Saturday.",
+      "reference_meaning_zh": "博物馆导览于周六上午8点25分开始。",
+      "critical_expected_facts": {
+        "current": [
+          "星期为周六",
+          "开始时间为上午08:25"
+        ],
+        "negated": []
+      },
+      "must_not_invent": {
+        "currency": "没有门票价格，不增加金额。",
+        "date": "未给具体年月日，也未说本周，不补本周或日期。",
+        "direction": "上午8:25不能改成晚上8:25或结束时间。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "博物馆参观于星期六上午8时25分开始。",
+          "elapsed_ms": 583,
+          "wall_ms": 583,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "DT02",
+      "category": "dates_times",
+      "input": "Please arrive ten minutes before the 6:10 p.m. departure.",
+      "reference_meaning_zh": "请在傍晚6点10分出发前十分钟到达。",
+      "critical_expected_facts": {
+        "current": [
+          "出发时间为18:10",
+          "到达要求为出发前10分钟，等值表达18:00可接受"
+        ],
+        "negated": [
+          "出发后10分钟才到达"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有票价，不增加金额。",
+        "date": "没有日期或时区，不补当天、明天或时区。",
+        "direction": "before是提前到达，不是晚到；出发与到达时间不能颠倒。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "请在下午6: 10出发前10分钟到达",
+          "elapsed_ms": 631,
+          "wall_ms": 631,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "DT03",
+      "category": "dates_times",
+      "input": "The pickup is on the day after tomorrow at 11:05 a.m.",
+      "reference_meaning_zh": "取件时间是后天上午11点05分。",
+      "critical_expected_facts": {
+        "current": [
+          "相对日期为后天",
+          "时间为上午11:05"
+        ],
+        "negated": []
+      },
+      "must_not_invent": {
+        "currency": "没有取件费用，不增加价格。",
+        "date": "保留后天，不按测试当天换算公历日期或星期。",
+        "direction": "后天不是明天；上午不是晚上。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "后天上午11时05分 接车在后天的第二天",
+          "elapsed_ms": 836,
+          "wall_ms": 836,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "DT04",
+      "category": "dates_times",
+      "input": "The deadline is 4 p.m. next Tuesday, not this Tuesday.",
+      "reference_meaning_zh": "截止时间是下周二下午4点，不是本周二。",
+      "critical_expected_facts": {
+        "current": [
+          "截止日期为下周二",
+          "截止时间为16:00"
+        ],
+        "negated": [
+          "截止日期是本周二"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有金额，不增加费用。",
+        "date": "不把本周二和下周二换算成测试当天推导的具体日期。",
+        "direction": "最终采用下周二；不能遗漏对本周二的否定。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "截止时间是下星期二下午4:00,而不是本星期二。",
+          "elapsed_ms": 851,
+          "wall_ms": 851,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "DT05",
+      "category": "dates_times",
+      "input": "The gallery is open from 9:40 a.m. until 1:20 p.m.",
+      "reference_meaning_zh": "画廊的开放时段为上午9点40分至下午1点20分。",
+      "critical_expected_facts": {
+        "current": [
+          "开放起点为09:40",
+          "开放终点为13:20"
+        ],
+        "negated": []
+      },
+      "must_not_invent": {
+        "currency": "没有票价，不增加价格。",
+        "date": "未注明具体日期或每周开放日，不自行增加。",
+        "direction": "保留起止顺序；下午1:20不是凌晨1:20。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "画廊开放时间为上午9时40分至下午1时20分。",
+          "elapsed_ms": 758,
+          "wall_ms": 758,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "DT06",
+      "category": "dates_times",
+      "input": "Let's meet on 18 February at noon; I have not confirmed the year.",
+      "reference_meaning_zh": "我们约在2月18日中午见面，但我还没有确认年份。",
+      "critical_expected_facts": {
+        "current": [
+          "日期为2月18日",
+          "时间为中午12:00",
+          "年份未确认"
+        ],
+        "negated": [
+          "年份已经确认"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有金额，不增加费用。",
+        "date": "不得补年份或星期。",
+        "direction": "中午不是午夜；未确认年份不是取消会面。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "让我们在2月18日中午开会,我还没有确认",
+          "elapsed_ms": 565,
+          "wall_ms": 565,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "DT07",
+      "category": "dates_times",
+      "input": "The online lesson starts at 7:30 p.m. UTC and lasts forty minutes.",
+      "reference_meaning_zh": "在线课程于协调世界时UTC晚上7点30分开始，持续40分钟。",
+      "critical_expected_facts": {
+        "current": [
+          "开始时间为19:30 UTC",
+          "时长为40分钟"
+        ],
+        "negated": []
+      },
+      "must_not_invent": {
+        "currency": "没有课程价格，不增加费用。",
+        "date": "没有日期；不自行添加当地日期或换算为北京时间。",
+        "direction": "40分钟是持续时长，不是提前或延后40分钟。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "在线课程从世界协调时下午7时30分开始,持续40分钟。",
+          "elapsed_ms": 882,
+          "wall_ms": 882,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "DT08",
+      "category": "dates_times",
+      "input": "Return the key by 5:45 p.m. tomorrow; tonight is too early.",
+      "reference_meaning_zh": "请在明天下午5点45分前归还钥匙，今晚归还太早了。",
+      "critical_expected_facts": {
+        "current": [
+          "归还要求为明天17:45之前或不晚于该时点",
+          "今晚被认为太早"
+        ],
+        "negated": [
+          "今晚是最终约定的归还时间"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有押金或费用，不增加金额。",
+        "date": "保留明天和今晚，不换成具体日期。",
+        "direction": "by表示不晚于该时点；不能改成明天17:45以后。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "明天下午5点45前把钥匙还回来,今晚太早了",
+          "elapsed_ms": 883,
+          "wall_ms": 883,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "DT09",
+      "category": "dates_times",
+      "input": "Move the rehearsal from Wednesday morning to Friday afternoon, keeping the duration at ninety minutes.",
+      "reference_meaning_zh": "把排练从周三上午改到周五下午，时长仍保持90分钟。",
+      "critical_expected_facts": {
+        "current": [
+          "新的排练安排为周五下午",
+          "排练时长仍为90分钟"
+        ],
+        "negated": [
+          "周三上午仍是当前排练安排"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有场地费，不增加费用。",
+        "date": "未给具体年月日和钟点，不增加。",
+        "direction": "从周三上午改到周五下午，不能颠倒新旧安排或改变90分钟时长。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "排练时间从星期三上午到星期五下午,持续时间为90分钟。",
+          "elapsed_ms": 818,
+          "wall_ms": 818,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "DT10",
+      "category": "dates_times",
+      "input": "The access code expires at midnight at the end of Sunday, not at the start of Sunday.",
+      "reference_meaning_zh": "访问码在周日结束时的午夜失效，也就是紧接着的周一零点，不是周日开始时失效。",
+      "critical_expected_facts": {
+        "current": [
+          "失效边界为周日结束与周一开始之间的午夜"
+        ],
+        "negated": [
+          "失效边界为周六结束与周日开始之间的午夜"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有价格，不增加收费。",
+        "date": "未给具体年月日或时区，不增加。",
+        "direction": "保留end与start的区别，不提前一天失效。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "访问密码在星期日末午夜到期,而不是星期日开始时到期。",
+          "elapsed_ms": 743,
+          "wall_ms": 743,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "NC01",
+      "category": "negation_correction",
+      "input": "Do not bring the red cable. Bring the white cable instead.",
+      "reference_meaning_zh": "不要带红色线缆，改带白色线缆。",
+      "critical_expected_facts": {
+        "current": [
+          "应带白色线缆"
+        ],
+        "negated": [
+          "应带红色线缆"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有价格，不增加费用。",
+        "date": "没有日期，不增加交付日期。",
+        "direction": "替换方向为红色改白色，不是两根都带。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "别带红线,拿白线代替白线",
+          "elapsed_ms": 651,
+          "wall_ms": 651,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "NC02",
+      "category": "negation_correction",
+      "input": "The parcel has not been sent yet; only the address label has been printed.",
+      "reference_meaning_zh": "包裹还没有寄出，只打印好了地址标签。",
+      "critical_expected_facts": {
+        "current": [
+          "包裹尚未寄出",
+          "地址标签已打印"
+        ],
+        "negated": [
+          "包裹已寄出"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有运费或币种，不增加金额。",
+        "date": "没有寄出或送达日期，不编日期。",
+        "direction": "不能把标签已打印推断为包裹已寄出或已送达。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "包裹尚未寄出;仅打印了地址标签。",
+          "elapsed_ms": 676,
+          "wall_ms": 676,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "NC03",
+      "category": "negation_correction",
+      "input": "I ordered the smaller drawer unit, not the wider one; the handle colour can stay silver.",
+      "reference_meaning_zh": "我订的是较小的抽屉柜，不是较宽的那款；把手颜色可以保持银色。",
+      "critical_expected_facts": {
+        "current": [
+          "订购的是较小的抽屉柜",
+          "把手可保持银色"
+        ],
+        "negated": [
+          "订购的是较宽的抽屉柜"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有价格，不增加金额。",
+        "date": "没有订单日期或交货日，不补日期。",
+        "direction": "否定针对较宽款，不是否定银色把手；未给具体尺寸。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "我订了更小的抽屉, 而不是更大的; 把手的颜色可以保持银色。",
+          "elapsed_ms": 999,
+          "wall_ms": 999,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "NC04",
+      "category": "negation_correction",
+      "input": "Correction: the visitor is Nila, spelled N-I-L-A, not Nina.",
+      "reference_meaning_zh": "更正：来访者叫Nila，拼写为N-I-L-A，不是Nina。",
+      "critical_expected_facts": {
+        "current": [
+          "正确姓名为Nila",
+          "字母拼写为N-I-L-A"
+        ],
+        "negated": [
+          "正确姓名是Nina"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有金额，不增加费用。",
+        "date": "没有来访日期，不增加预约日期。",
+        "direction": "姓名从Nina更正为Nila，不颠倒更正方向，不编姓氏。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "校正: 访客是尼拉 拼N -I -L",
+          "elapsed_ms": 878,
+          "wall_ms": 878,
+          "flags": [
+            "原文有否定，译文没看出否定"
+          ]
+        }
+      }
+    },
+    {
+      "id": "NC05",
+      "category": "negation_correction",
+      "input": "You may share the draft internally, but do not publish it on the public website.",
+      "reference_meaning_zh": "可以在内部分享这份草稿，但不要把它发布到公开网站上。",
+      "critical_expected_facts": {
+        "current": [
+          "允许内部分享草稿",
+          "禁止在公开网站发布草稿"
+        ],
+        "negated": [
+          "允许在公开网站发布草稿"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有价格，不增加费用。",
+        "date": "没有发布日期，不添加期限。",
+        "direction": "内部分享被允许，公开发布被禁止；不能合并为禁止任何分享。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "草案可在内部公布,但不得在公共网站上公布。",
+          "elapsed_ms": 759,
+          "wall_ms": 759,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MX01",
+      "category": "mixed_context",
+      "input": "A: Shall I order ten vegetarian lunches for Thursday?\nB: Make that eight, and change the day to Friday. The vegetarian option stays.",
+      "reference_meaning_zh": "A：要不要订十份周四的素食午餐？\nB：改成八份，日期改到周五。仍然要素食。",
+      "critical_expected_facts": {
+        "current": [
+          "B最终要求8份午餐",
+          "日期改为周五",
+          "仍选择素食",
+          "B提出修改，未说明订单已实际提交"
+        ],
+        "negated": [
+          "最终数量仍为10份",
+          "最终日期仍为周四"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有单价或币种，不增加总价。",
+        "date": "周四和周五不换算为公历日期，不自行补本周。",
+        "direction": "数量10改8，日期周四改周五，素食选择不变；不得声称已经下单。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "甲:我星期四要十份素食午餐吗?乙:8份,改一天到星期五。素食者选择留下来。",
+          "elapsed_ms": 1218,
+          "wall_ms": 1218,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MX02",
+      "category": "mixed_context",
+      "input": "A: The courier quote is 42 Canadian dollars for delivery on Monday.\nB: Use the 35-Canadian-dollar option instead. The delivery day is still Monday.",
+      "reference_meaning_zh": "A：周一送达的快递报价是42加元。\nB：改用35加元的方案，送达日仍是周一。",
+      "critical_expected_facts": {
+        "current": [
+          "最终选择35加元方案",
+          "送达日仍为周一"
+        ],
+        "negated": [
+          "最终选择42加元方案"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "明确为加元，不能改成美元或人民币。",
+        "date": "没有具体年月日，不补日期。",
+        "direction": "只更换价格方案，不能把送达日也更改；未说明物流已经发出。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "A:信使报价是42加拿大元,星期一交货。B:使用35加拿大元的选项。交货日仍为星期一。",
+          "elapsed_ms": 1269,
+          "wall_ms": 1269,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MX03",
+      "category": "mixed_context",
+      "input": "A: I have booked Room 608 for 2:50 p.m.\nB: The time is right, but the room should be 806.",
+      "reference_meaning_zh": "A：我已预订608室，时间是下午2点50分。\nB：时间是对的，但房间应该是806室。",
+      "critical_expected_facts": {
+        "current": [
+          "正确时间仍为14:50",
+          "B要求的正确房间为806室",
+          "A称已订608室；B未说明改订已完成"
+        ],
+        "negated": [
+          "608室是B认可的正确房间"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有房费，不增加费用。",
+        "date": "没有日期或时区，不增加。",
+        "direction": "房间608更正为806，时间不变；不能声称已经成功改订806室。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "A:我订了608房间,下午2:50。 B:时间是正确的,但房间应该为806间。",
+          "elapsed_ms": 1065,
+          "wall_ms": 1065,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MX04",
+      "category": "mixed_context",
+      "input": "A: We will set up the display at 10 a.m. tomorrow with four stands.\nB: Keep tomorrow, but start at 10:30 a.m. Use three stands instead.",
+      "reference_meaning_zh": "A：我们明天上午10点用四个展架布置展览。\nB：仍是明天，但改为上午10点30分开始，展架改用三个。",
+      "critical_expected_facts": {
+        "current": [
+          "相对日期仍为明天",
+          "新的开始时间为上午10:30",
+          "展架改用3个"
+        ],
+        "negated": [
+          "最终开始时间仍为上午10:00",
+          "最终展架数量仍为4个"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "没有展架价格，不增加金额。",
+        "date": "保留明天，不转换为公历日期或星期。",
+        "direction": "开始时间延后30分钟，数量4改3，日期不变；不改成提前。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "A:我们将在明天上午10时举行展览,有4个摊位。B:保持明天,但从上午10:30开始。用",
+          "elapsed_ms": 1263,
+          "wall_ms": 1263,
+          "flags": []
+        }
+      }
+    },
+    {
+      "id": "MX05",
+      "category": "mixed_context",
+      "input": "A: The two-hour session costs 70 euros, including the room.\nB: Keep the two-hour length, but choose the 55-euro package. That price excludes the room.",
+      "reference_meaning_zh": "A：两小时的活动收费70欧元，包含场地。\nB：仍然是两小时，但改选55欧元的套餐，这个价格不包含场地。",
+      "critical_expected_facts": {
+        "current": [
+          "最终时长仍为2小时",
+          "最终套餐价格为55欧元",
+          "55欧元不含场地费用",
+          "包含场地后的最终总价未知"
+        ],
+        "negated": [
+          "最终选择70欧元套餐",
+          "55欧元已经包含场地"
+        ]
+      },
+      "must_not_invent": {
+        "currency": "保留欧元，不换成其他币种。",
+        "date": "没有活动日期或开始时间，不增加。",
+        "direction": "时长不变，套餐70改55，场地由原方案包含变为新方案不包含；不能说总支出已确定为55欧元。"
+      },
+      "outputs": {
+        "local-onnx": {
+          "ok": true,
+          "text": "A:两小时会议的费用为70欧元,包括会议室在内。 B:保持两小时,但选择55欧元的一揽子计划。这个价格不包括会议室。",
+          "elapsed_ms": 1424,
+          "wall_ms": 1424,
+          "flags": []
+        }
+      }
+    }
+  ]
+}

@@ -8,8 +8,25 @@
  *    `provider` 是真调云端，`mock` 是预置结果 —— 三者不许混着展示。
  */
 
-export type TranslateMode = 'local-onnx' | 'local-opus' | 'argos' | 'provider' | 'mock';
+export type TranslateMode = 'phrasebook' | 'local-onnx' | 'local-opus' | 'local-cascade' | 'argos' | 'provider' | 'mock';
 export type TranscribeMode = 'local-whisper' | 'provider' | 'mock';
+
+/** 「对方说的是哪种语言」。中文永远在译文那一侧。 */
+export type SourceLanguage = 'en' | 'ja' | 'ko' | 'ru';
+
+export const SOURCE_LANGUAGES: { code: SourceLanguage; label: string; sample: string }[] = [
+  { code: 'en', label: '英语', sample: 'Hello, how are you?' },
+  { code: 'ja', label: '日语', sample: 'こんにちは、お元気ですか。' },
+  { code: 'ko', label: '韩语', sample: '안녕하세요, 잘 지내세요?' },
+  { code: 'ru', label: '俄语', sample: 'Здравствуйте, как дела?' },
+];
+
+/** 一种源语言的可用状态。`ready=false` 时界面必须禁用，不能让人点了才发现不行。 */
+export interface LanguageState {
+  ready: boolean;
+  pipeline: string | null;
+  label: string;
+}
 
 export interface HealthLimits {
   max_chars: number;
@@ -31,6 +48,14 @@ export interface Health {
    * 配了一个错 Key 时 `real` 仍是 true，只有这里会是 false —— 界面要分开显示。
    */
   verified?: { translate: boolean; transcribe: boolean; reply: boolean };
+  /**
+   * 源语言支持情况。由服务端读本机模型目录得出，不是写死的清单 ——
+   * 没装模型的语种这里会是 ready:false，界面据此禁用。
+   */
+  languages?: {
+    source: Partial<Record<SourceLanguage, LanguageState>>;
+    target: string[];
+  };
   notes: string[];
 }
 
@@ -38,6 +63,18 @@ export interface TranslateResult {
   request_id: string;
   translation: string;
   mode: TranslateMode;
+  /** 常用语库命中时区分「整句」还是「单词词义」。 */
+  note?: 'sentence' | 'word';
+  /** 命中来自拼写变体（hellow → hello）。 */
+  corrected?: boolean;
+  /** 命中的归一化写法，用来告诉使用者「按哪个词查的」。 */
+  matched?: string;
+  /** 这一路被判退化而跳过的原因（只含模式 + 原因码，不含正文）。 */
+  skipped?: string[];
+  /** 日/韩/俄两级转译时，中间那句英语。 */
+  via?: string | null;
+  /** 实际走的翻译路径，例如 `ja-en-zh`。 */
+  pipeline?: string;
   source_language: string;
   target_language: string;
   elapsed_ms: number;
@@ -52,11 +89,19 @@ export interface TranscribeResult {
   duration_seconds: number | null;
 }
 
+export interface ReplySuggestion {
+  reply: string;
+  meaning: string;
+  /** confirm = 复述确认；repeat = 请对方打字/重复；ask = 稍后回复；thanks = 中性回应。 */
+  kind: string;
+}
+
 export interface ReplyResult {
   request_id: string;
   reply: string;
   meaning: string;
   mode: TranslateMode;
+  suggestions?: ReplySuggestion[];
   elapsed_ms: number;
 }
 
@@ -196,12 +241,13 @@ export async function getHealth(signal?: AbortSignal): Promise<Health> {
 export async function translate(
   text: string,
   signal?: AbortSignal,
+  sourceLanguage: SourceLanguage = 'en',
 ): Promise<TranslateResult> {
   const response = await fetch(url('/api/translate'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: sessionHeaders({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ text, source_language: 'en', target_language: 'zh' }),
+    body: JSON.stringify({ text, source_language: sourceLanguage, target_language: 'zh' }),
     signal,
   });
   return json<TranslateResult>(response);
@@ -262,10 +308,14 @@ export async function withSession<T>(run: () => Promise<T>, signal?: AbortSignal
 
 export function modeLabel(mode: TranslateMode | TranscribeMode): string {
   switch (mode) {
+    case 'phrasebook':
+      return '常用语库（人工整理）';
     case 'local-onnx':
     case 'local-opus':
     case 'argos':
       return '本地翻译模型（真实翻译）';
+    case 'local-cascade':
+      return '本地翻译模型（经英语转译）';
     case 'provider':
       return '云端模型（真实调用）';
     case 'local-whisper':

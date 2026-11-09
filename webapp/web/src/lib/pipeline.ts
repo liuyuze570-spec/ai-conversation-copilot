@@ -15,6 +15,7 @@ import {
 } from '@shared/facts';
 import { buildHintPlan, type HintPlan } from '@services/pronunciation';
 import type { HintSystem } from '@shared/languages';
+import type { TargetLanguage } from '@shared/types';
 import { toChineseSpeech } from '@shared/numeric-check';
 
 export interface FactRow {
@@ -126,11 +127,19 @@ export function confirm(rows: FactRow[]): ConfirmPlan {
   return localized && localized !== plan.meaning ? { ...plan, meaning: localized } : plan;
 }
 
-/** 读音提示：网页只做中文用户的汉字近音，不冒充多语言能力。 */
-export function hintsFor(text: string, system: HintSystem = 'hanzi'): HintPlan | null {
+/** 读音提示：网页只做中文用户的汉字近音，不冒充多语言能力。
+ *
+ * `target` 是**原文**的语言：日语的汉字近音要走日语读音表，俄语要走西里尔转写，
+ * 不能一律按英语规则拼。同一句「こんにちは」用英语规则读出来是垃圾。
+ */
+export function hintsFor(
+  text: string,
+  target: TargetLanguage = 'English',
+  system: HintSystem = 'hanzi',
+): HintPlan | null {
   if (!text.trim()) return null;
   try {
-    return buildHintPlan(text, 'English', system, []);
+    return buildHintPlan(text, target, system, []);
   } catch {
     return null;
   }

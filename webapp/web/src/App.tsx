@@ -14,8 +14,17 @@ import {
 } from './adapter/browser';
 import { toWav } from './adapter/wav';
 import { hintsFor, needsWording } from './lib/pipeline';
-import { modeLabel, type Health } from './api';
+import { SOURCE_LANGUAGES, modeLabel, type Health, type SourceLanguage } from './api';
 import { toChineseSpeech, type NumericCheck } from '@shared/numeric-check';
+import type { TargetLanguage } from '@shared/types';
+
+/** 源语言 → 读音提示用的语言名（读音规则按原文语言走，不按界面语言走）。 */
+const HINT_TARGET: Record<SourceLanguage, TargetLanguage> = {
+  en: 'English',
+  ja: 'Japanese',
+  ko: 'Korean',
+  ru: 'Russian',
+};
 
 const ZH_EN_SAMPLES = SAMPLE_CASES.map((sample) => {
   const variant = sample.variants['zh-en'];
@@ -24,12 +33,20 @@ const ZH_EN_SAMPLES = SAMPLE_CASES.map((sample) => {
 
 type MicState = 'idle' | 'recording' | 'processing';
 
-function Badge({ tone, children }: { tone: 'real' | 'preset' | 'warn' | 'muted'; children: ReactNode }) {
+function Badge({
+  tone,
+  children,
+}: {
+  tone: 'real' | 'preset' | 'warn' | 'muted' | 'table';
+  children: ReactNode;
+}) {
   const map = {
     real: 'border-ok/40 bg-ok/10 text-ok',
     preset: 'border-warn/40 bg-warn/10 text-warn',
     warn: 'border-danger/40 bg-danger/10 text-danger',
     muted: 'border-white/12 bg-white/5 text-white/60',
+    // 常用语库：既不是模型，也不是演示预置，用中性色单独区分。
+    table: 'border-white/25 bg-white/8 text-white/75',
   } as const;
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${map[tone]}`}>
@@ -62,6 +79,12 @@ export function App() {
   const [highContrast, setHighContrast] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showCard, setShowCard] = useState(false);
+  /**
+   * 大字卡要显示哪一句。
+   * null = 用「确认句」（state.plan）；非 null = 用户点了某条回复建议的「放大给对方看」。
+   * 没有这个，回复卡上的放大按钮就只能放大确认句 —— 点哪条都一样，等于坏的。
+   */
+  const [cardSentence, setCardSentence] = useState<{ sentence: string; meaning: string } | null>(null);
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
   const [wording, setWording] = useState<{ id: string; value: string } | null>(null);
   const recorder = useRef<RecorderHandle | null>(null);
@@ -195,6 +218,8 @@ export function App() {
   const sourceBadge =
     state.translateMode === 'preset' ? (
       <Badge tone="preset">预置演示 · 不是模型输出</Badge>
+    ) : state.translateMode === 'phrasebook' ? (
+      <Badge tone="table">常用语库 · 人工整理，不是模型</Badge>
     ) : state.translateMode ? (
       <Badge tone={state.translateMode === 'mock' ? 'warn' : 'real'}>{modeLabel(state.translateMode)}</Badge>
     ) : null;
@@ -203,12 +228,17 @@ export function App() {
     state.transcribeMode === 'mock' ? <Badge tone="warn">识别：预置结果</Badge> : null;
 
   const hints = useMemo(
-    () => (state.original && state.translateMode !== 'preset' ? hintsFor(state.original) : null),
-    [state.original, state.translateMode],
+    () =>
+      state.original && state.translateMode !== 'preset'
+        ? hintsFor(state.original, HINT_TARGET[state.sourceLang])
+        : null,
+    [state.original, state.translateMode, state.sourceLang],
   );
 
-  const closeCard = useCallback(() => {
-    setShowCard(false);
+  const currentLang =
+    SOURCE_LANGUAGES.find((item) => item.code === state.sourceLang) ?? SOURCE_LANGUAGES[0];
+
+  const closeCard = useCallback(() => {    setShowCard(false);
     cardTrigger.current?.focus();
   }, []);
 
@@ -287,15 +317,52 @@ export function App() {
         </div>
       </header>
 
-      <Section title="1 · 对方的英语" hint="打字、录音，或点一条预置样例">
-        <label className="muted text-[12px] text-white/55" htmlFor="original-input">
-          原文（英语）
+      <Section title="1 · 对方说的话" hint="先说清是哪种语言，再打字、录音，或点一条预置样例">
+        {/*
+          语言选择。用按钮组而不是 <select>：
+          1) 项目规范里禁原生 select（自绘才控得住配色与焦点环）；
+          2) 每个语种要能表达「就绪 / 未就绪」两种状态，原生选项做不到。
+          未就绪的语种**禁用**并写明原因 —— 让人点了才发现翻不了，是最差的体验。
+        */}
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          role="group"
+          aria-label="对方说的语言"
+          data-testid="source-language-group"
+        >
+          {SOURCE_LANGUAGES.map((item) => {
+            const remote = state.health?.languages?.source?.[item.code];
+            const ready = item.code === 'en' ? true : Boolean(remote?.ready);
+            const active = state.sourceLang === item.code;
+            return (
+              <button
+                key={item.code}
+                type="button"
+                aria-pressed={active}
+                disabled={!ready || state.stage !== 'idle'}
+                data-testid={`source-language-${item.code}`}
+                title={ready ? `对方说${item.label}` : `${item.label}翻译模型还没装好，暂时不能翻`}
+                className={`rounded-lg border px-2.5 py-1 text-[12px] disabled:opacity-40 ${
+                  active
+                    ? 'border-accent/70 bg-accent/15 text-accent-soft'
+                    : 'border-white/12 text-white/70'
+                }`}
+                onClick={() => state.setSourceLang(item.code)}
+              >
+                {item.label}
+                {ready ? null : <span className="ml-1 text-[10px] text-white/45">未就绪</span>}
+              </button>
+            );
+          })}
+        </div>
+        <label className="muted mt-2 block text-[12px] text-white/55" htmlFor="original-input">
+          原文（{currentLang.label}）
         </label>
         <textarea
           id="original-input"
           data-testid="original-input"
           className="mt-1.5 min-h-[92px] w-full resize-y rounded-xl border border-white/12 bg-ink-950/70 p-3 text-[15px] leading-relaxed text-white outline-none focus-visible:border-accent"
-          placeholder="例如：Please send the report by 3 p.m. tomorrow."
+          placeholder={`例如：${currentLang.sample}`}
           value={state.original}
           onChange={(event) => state.setOriginal(event.target.value)}
           spellCheck={false}
@@ -388,25 +455,35 @@ export function App() {
           ) : null}
         </div>
 
-        <div className="mt-3 border-t border-white/8 pt-3">
-          <p className="muted mb-2 text-[11.5px] text-white/45">
-            三组预置样例（<span className="text-warn">预置演示</span>，不代表真实翻译质量）
-          </p>
-          <div className="flex flex-col gap-2">
-            {ZH_EN_SAMPLES.map((sample) => (
-              <button
-                key={sample.id}
-                type="button"
-                data-testid={`sample-${sample.id}`}
-                className="rounded-xl border border-white/10 bg-white/4 px-3 py-2 text-left text-[13px] text-white/80 hover:border-accent/50"
-                onClick={() => pickSample(sample)}
-              >
-                <span className="font-medium text-white/90">{sample.title}</span>
-                <span className="muted mt-0.5 block text-[11.5px] text-white/50">{sample.original}</span>
-              </button>
-            ))}
+        {/*
+          预置样例只有英语三组。切到日/韩/俄就不显示 —— 让「日语」标签下面躺着
+          三条英文样例，等于告诉使用者「语言选择没生效」，比不显示更糟。
+        */}
+        {state.sourceLang === 'en' ? (
+          <div className="mt-3 border-t border-white/8 pt-3">
+            <p className="muted mb-2 text-[11.5px] text-white/45">
+              三组预置样例（<span className="text-warn">预置演示</span>，不代表真实翻译质量）
+            </p>
+            <div className="flex flex-col gap-2">
+              {ZH_EN_SAMPLES.map((sample) => (
+                <button
+                  key={sample.id}
+                  type="button"
+                  data-testid={`sample-${sample.id}`}
+                  className="rounded-xl border border-white/10 bg-white/4 px-3 py-2 text-left text-[13px] text-white/80 hover:border-accent/50"
+                  onClick={() => pickSample(sample)}
+                >
+                  <span className="font-medium text-white/90">{sample.title}</span>
+                  <span className="muted mt-0.5 block text-[11.5px] text-white/50">{sample.original}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <p className="muted mt-3 border-t border-white/8 pt-3 text-[11.5px] text-white/45">
+            {currentLang.label}没有预置样例，直接在上面粘贴或输入原文即可。
+          </p>
+        )}
       </Section>
 
       <div aria-live="polite" className="mt-2 min-h-[20px] text-[12px] text-white/60">
@@ -425,7 +502,13 @@ export function App() {
         {!state.notice && stageText ? <span>{stageText}</span> : null}
         {!state.notice && !stageText && state.translateMode && state.translateMode !== 'preset' ? (
           <span>
-            翻译完成 · {state.elapsedMs != null ? `${(state.elapsedMs / 1000).toFixed(2)}s` : '耗时未返回'}
+            {/*
+              常用语库是查表直出，不是「翻译完成」，更没有耗时可言（实测 0.00s，
+              看起来像模型瞬间翻完，其实是没跑模型）。这一行必须说实话。
+            */}
+            {state.translateMode === 'phrasebook'
+              ? '常用语库直接命中 · 没有调用模型'
+              : `翻译完成 · ${state.elapsedMs != null ? `${(state.elapsedMs / 1000).toFixed(2)}s` : '耗时未返回'}`}
             {state.requestId ? ` · 请求 ${state.requestId.slice(0, 8)}` : ''}
           </span>
         ) : null}
@@ -442,6 +525,40 @@ export function App() {
             <p className="muted mt-1 text-[11px] text-white/45" data-testid="unverified-hint">
               服务端已配置翻译模型，但这一页还没成功调通过；下面这条结果如果出来了，说明已经通了。
             </p>
+          ) : null}
+          {/*
+            常用语库的两条说明。都是「这条结果是怎么来的」，不是装饰：
+            - 手误纠正：必须说我按哪个词查的，否则用户不知道 hellow 为什么变成「你好」；
+            - 单词词义：一个词的释义不是一句话的翻译，不能让人以为对方说的是「你好；喂」。
+          */}
+          {state.translateMode === 'phrasebook' && state.translateCorrected && state.translateMatched ? (
+            <p className="muted mt-1 text-[11px] text-white/50" data-testid="corrected-hint">
+              你打的是一个常见手误，这条按「{state.translateMatched}」查的；上面的原文没有改动。
+            </p>
+          ) : null}
+          {state.translateMode === 'phrasebook' && state.translateNote === 'word' ? (
+            <p className="muted mt-1 text-[11px] text-white/50" data-testid="word-gloss-hint">
+              这是这个单词的常用词义，不是整句翻译。
+            </p>
+          ) : null}
+          {/*
+            两级转译必须说明。日/韩/俄没有直译中文的模型，这句是经英语中转的，
+            措辞会比英译中粗糙 —— 不说清楚，用户会把「两跳的误差」当成翻译质量问题。
+            中间那句英语也留着：既方便对照，也方便我们定位是哪一级出的错。
+          */}
+          {state.translateMode === 'local-cascade' ? (
+            <div className="mt-1.5 rounded-xl border border-white/10 bg-white/4 px-2.5 py-2" data-testid="cascade-hint">
+              <p className="text-[11px] leading-relaxed text-white/55">
+                {currentLang.label}这一版没有「直译中文」的模型，这句是
+                <span className="text-white/80">「{currentLang.label} → 英语 → 中文」</span>
+                两级转译，措辞可能比英译中粗糙。
+              </p>
+              {state.translateVia ? (
+                <p className="mt-1 break-words text-[11px] text-white/40">
+                  中间的英语：{state.translateVia}
+                </p>
+              ) : null}
+            </div>
           ) : null}
           <p
             className="mt-2 whitespace-pre-wrap font-medium leading-snug text-white"
@@ -604,10 +721,11 @@ export function App() {
             </button>
             <button
               type="button"
+              data-testid="ask-reply"
               className="rounded-xl border border-white/15 px-3 py-2 text-sm text-white/85"
               onClick={() => void state.askReply()}
             >
-              给我一句回复建议
+              {state.replies.length ? '再给我几条回复建议' : '给我一句回复建议'}
             </button>
           </div>
 
@@ -627,7 +745,10 @@ export function App() {
                     ref={cardTrigger}
                     data-testid="show-card"
                     className="rounded-lg bg-white/10 px-3 py-1.5 text-[12px] text-white"
-                    onClick={() => setShowCard(true)}
+                    onClick={() => {
+                      setCardSentence(null);
+                      setShowCard(true);
+                    }}
                   >
                     放大给对方看
                   </button>
@@ -649,17 +770,69 @@ export function App() {
               </p>
             )
           ) : null}
+        </Section>
+      ) : null}
 
-          {state.replyText ? (
-            <div className="mt-3 rounded-xl border border-white/10 bg-white/4 p-3">
-              <p className="text-[11.5px] text-white/45">
-                参考回复（{state.replyMode ? modeLabel(state.replyMode) : '未知来源'}，请自己判断要不要说）
-              </p>
-              <p className="mt-1 text-[15px] text-white" data-testid="reply-text">
-                {state.replyText}
-              </p>
-            </div>
-          ) : null}
+      {/*
+        三条候选，不是一条。听障使用者要的是选择权：一条「好的，谢谢」
+        既不能确认理解、也不能请对方打字。
+
+        这一段必须放在「重点信息」区块**外面**：hellow 这种问候没有可核对的事实，
+        facts 为空，整个区块不渲染 —— 回复建议也就跟着消失了。实测线上就是这样，
+        输入 hellow 一条回复都看不到。
+      */}
+      {state.replies.length ? (
+        <Section title="4 · 可以回的话" hint="翻译完自动生成；英语，请自己判断要不要说">
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/4 p-3" data-testid="reply-list">
+            <p className="text-[11.5px] text-white/45">
+              可以回的话（
+              {/*
+                reply 的 `mock` 是**人工模板**，不是「预置演示结果」。两者都不是模型，
+                但一个能直接拿去用、一个只是示例，混在一句话里会让人误判能不能说。
+              */}
+              {state.replyMode === 'mock'
+                ? '人工模板句，不是 AI 生成'
+                : state.replyMode
+                  ? modeLabel(state.replyMode)
+                  : '未知来源'}
+              ；英语，请自己判断要不要说）
+            </p>
+            <ul className="mt-2 space-y-2">
+              {state.replies.map((item, index) => (
+                <li
+                  key={`${item.kind}-${index}`}
+                  className="rounded-lg border border-white/8 bg-ink-950/40 px-2.5 py-2"
+                >
+                  <p className="text-[15px] leading-snug text-white" data-testid={`reply-text-${index}`}>
+                    {item.reply}
+                  </p>
+                  <p className="mt-0.5 text-[12px] text-white/55">{item.meaning}</p>
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-white/15 px-2 py-0.5 text-[11.5px] text-white/80"
+                      onClick={() => {
+                        const result = speak(item.reply, 'en-US');
+                        if (!result.ok && result.reason) setFileNotice(result.reason);
+                      }}
+                    >
+                      朗读
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-white/15 px-2 py-0.5 text-[11.5px] text-white/80"
+                      onClick={() => {
+                        setCardSentence({ sentence: item.reply, meaning: item.meaning });
+                        setShowCard(true);
+                      }}
+                    >
+                      放大给对方看
+                    </button>
+                  </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
         </Section>
       ) : null}
 
@@ -672,10 +845,10 @@ export function App() {
         </p>
       </footer>
 
-      {showCard && state.plan?.ok ? (
+      {showCard && (cardSentence || state.plan?.ok) ? (
         <BigCard
-          sentence={state.plan.sentence}
-          meaning={state.plan.meaning}
+          sentence={cardSentence?.sentence ?? (state.plan?.ok ? state.plan.sentence : '')}
+          meaning={cardSentence?.meaning ?? (state.plan?.ok ? state.plan.meaning : '')}
           onClose={closeCard}
           restoreFocus={cardTrigger}
           onSpeak={(text) => {
