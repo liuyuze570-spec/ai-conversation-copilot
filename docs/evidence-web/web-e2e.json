@@ -5,8 +5,8 @@
       "name": "health",
       "data": {
         "ok": true,
-        "version": "0.7.0-web.5",
-        "build": "web5-2026-11-09",
+        "version": "0.7.0-web.6",
+        "build": "web6-2026-11-09",
         "mode": {
           "translate": "local-onnx",
           "transcribe": "local-whisper",
@@ -26,8 +26,8 @@
           "quota_reply": 40
         },
         "diag": {
-          "boot": "cd24417d",
-          "uptime_s": 45,
+          "boot": "f5ca2f82",
+          "uptime_s": 37,
           "sessions": 2,
           "session_ttl": 7200,
           "session_transport": [
@@ -42,7 +42,7 @@
         },
         "runtime": {
           "translate": {
-            "ok": 4,
+            "ok": 3,
             "fail": 0,
             "last_error": ""
           },
@@ -96,7 +96,7 @@
         "translation": "请在明天下午3时前将报告发送。",
         "facts": [
           "时间 3 p.m （下午3点） 原话：3 p.m 核对时间 修改时间 改说法",
-          "日期 明天 原话：tomorrow 核对日期 修改日期 改说法"
+          "日期 明天 译文中：tomorrow 核对日期 修改日期 改说法"
         ],
         "badges": [
           "翻译：本地翻译模型（真实翻译）",
@@ -132,8 +132,8 @@
         "translation": "预算是一万五千，不是五万。",
         "badge": "预置演示",
         "facts": [
-          "金额 fifteen thousand （一万五千） 原话：fifteen thousand 核对金额 修改金额 改说法",
-          "金额 fifty thousand （五万） 被对方否定，不作数 原话：fifty thousand 核对金额 修改金额 改说法"
+          "金额 fifteen thousand （一万五千） 币种未说明 原话：fifteen thousand 核对金额 修改金额 改说法",
+          "金额 fifty thousand （五万） 币种未说明 被对方否定，不作数 原话：fifty thousand 核对金额 修改金额 改说法"
         ]
       }
     },

@@ -71,6 +71,12 @@ export interface TranslateResult {
   matched?: string;
   /** 这一路被判退化而跳过的原因（只含模式 + 原因码，不含正文）。 */
   skipped?: string[];
+  /**
+   * 服务端对译文做的修正（只在原话没有相应信息时发生）：
+   * `currency-removed` = 模型补了原话没有的币种，已删；
+   * `reschedule-restored` = 原话说了「改」，译文漏了，已补成「由…改到…」。
+   */
+  corrections?: string[];
   /** 日/韩/俄两级转译时，中间那句英语。 */
   via?: string | null;
   /** 实际走的翻译路径，例如 `ja-en-zh`。 */

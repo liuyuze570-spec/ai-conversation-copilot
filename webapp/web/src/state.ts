@@ -22,6 +22,8 @@ import {
   type FactRow,
 } from './lib/pipeline';
 import type { ConfirmPlan } from '@shared/facts';
+import { planReplies, type PlannedReply } from '@shared/reply-plan';
+import { transliterate } from '@services/pronunciation';
 import { checkNumericConsistency, type NumericCheck } from '@shared/numeric-check';
 
 export type Stage = 'idle' | 'translating' | 'transcribing' | 'replying';
@@ -59,6 +61,8 @@ interface State {
   translateMatched: string | null;
   /** 日/韩/俄走「→英→中」两级时，中间那句英语（用于说明转译路径）。 */
   translateVia: string | null;
+  /** 服务端对译文的修正说明（空数组表示没有）。 */
+  translateCorrections: string[];
   transcribeMode: TranscribeMode | null;
   source: SourceKind | null;
   /** 真实耗时，来自后端；预置样例没有这个值。 */
@@ -77,6 +81,16 @@ interface State {
   replyMode: TranslateMode | null;
   /** 三条候选回复。第一条与 replyText 相同，保留后者兼容旧渲染。 */
   replies: ReplySuggestion[];
+  /**
+   * 回复卡（结构化：用途 + 英文 + 中文 + 分段近音 + 操作）。
+   *
+   * 与 `replies` 并存：`replies` 是服务端/AI 那条路的原始返回，
+   * `replyCards` 是界面真正渲染的东西。没有可用模型时，这里由
+   * `planReplies()` 按当前事实**本地**拼出来（断网也有）。
+   */
+  replyCards: PlannedReply[];
+  /** 用户改过的回复：中文不再是原句的意思，界面要标出来。 */
+  editReply: (id: string, en: string) => void;
   version: number;
 
   init: () => Promise<void>;
@@ -158,6 +172,7 @@ export const useApp = create<State>((set, get) => ({
   translateCorrected: false,
   translateMatched: null,
   translateVia: null,
+  translateCorrections: [],
   transcribeMode: null,
   source: null,
   elapsedMs: null,
@@ -168,6 +183,7 @@ export const useApp = create<State>((set, get) => ({
   replyText: '',
   replyMode: null,
   replies: [],
+  replyCards: [],
   version: 0,
 
   init: async () => {
@@ -213,6 +229,7 @@ export const useApp = create<State>((set, get) => ({
       translateCorrected: false,
       translateMatched: null,
       translateVia: null,
+      translateCorrections: [],
       transcribeMode: null,
       source: null,
       facts: [],
@@ -221,6 +238,7 @@ export const useApp = create<State>((set, get) => ({
       replyText: '',
       replyMode: null,
       replies: [],
+      replyCards: [],
       elapsedMs: null,
       requestId: null,
       notice: null,
@@ -241,6 +259,7 @@ export const useApp = create<State>((set, get) => ({
       translateCorrected: false,
       translateMatched: null,
       translateVia: null,
+      translateCorrections: [],
       source,
       elapsedMs: null,
       requestId: null,
@@ -250,6 +269,7 @@ export const useApp = create<State>((set, get) => ({
       replyText: '',
       replyMode: null,
       replies: [],
+      replyCards: [],
     });
 
     if (presetTranslation) {
@@ -272,6 +292,7 @@ export const useApp = create<State>((set, get) => ({
         controller.signal,
       );
       if (get().version !== next) return;
+      const facts = analyze(text, result.translation);
       set({
         stage: 'idle',
         translation: result.translation,
@@ -280,10 +301,26 @@ export const useApp = create<State>((set, get) => ({
         translateCorrected: Boolean(result.corrected),
         translateMatched: result.matched ?? null,
         translateVia: result.via ?? null,
+        translateCorrections: result.corrections ?? [],
         elapsedMs: result.elapsed_ms,
         requestId: result.request_id,
-        facts: analyze(text, result.translation),
+        facts,
         numericCheck: checkNumericConsistency(text, result.translation),
+        /*
+         * 回复卡在**翻译成功的同一刻**就绪，不等网络。
+         *
+         * 这些句子是本地按事实拼的（不调模型），所以断网、没有 Key、
+         * 额度用完都照样有；服务端真有模型时再覆盖成 AI 建议。
+         */
+        replyCards: planReplies(
+          {
+            original: text,
+            translation: result.translation,
+            facts: facts.map((fact) => ({ ...fact })),
+            sourceLanguage: get().sourceLang,
+          },
+          (part) => transliterate(part, 'English'),
+        ),
       });
       // 第一次真的调通之后，把「尚未验证」的提示收掉（health 里 verified 变了）。
       if (get().health?.verified?.translate === false) {
@@ -323,12 +360,14 @@ export const useApp = create<State>((set, get) => ({
       translateCorrected: false,
       translateMatched: null,
       translateVia: null,
+      translateCorrections: [],
       transcribeMode: null,
       elapsedMs: null,
       requestId: null,
       replyText: '',
       replyMode: null,
       replies: [],
+      replyCards: [],
     });
     const controller = new AbortController();
     inflight = controller;
@@ -375,6 +414,29 @@ export const useApp = create<State>((set, get) => ({
         controller.signal,
       );
       if (get().version !== next) return;
+      /*
+       * 服务端没有可用模型时（`mode === 'mock'`，也就是模板句），**不覆盖**
+       * 本地那三张按事实拼出来的卡 —— 它们更贴合这句话（会说清币种、改期），
+       * 而服务端模板是通用句。只有在真的调通了模型时才换成 AI 建议。
+       */
+      const modelCards: PlannedReply[] =
+        result.mode !== 'mock' && result.suggestions?.length
+          ? result.suggestions.map((suggestion, index) => ({
+              id: `model-${index}`,
+              kind: suggestion.kind === 'confirm' ? 'confirm' : suggestion.kind === 'ask' ? 'clarify' : 'polite',
+              purpose: 'AI 建议（按当前对话生成）',
+              en: suggestion.reply,
+              zh: suggestion.meaning,
+              segments: [
+                {
+                  en: suggestion.reply,
+                  zh: suggestion.meaning,
+                  phon: transliterate(suggestion.reply, 'English'),
+                },
+              ],
+              why: '模型生成，可能包含原话没有的说法，请自己判断要不要说',
+            }))
+          : [];
       set({
         stage: 'idle',
         replyText: result.reply,
@@ -382,6 +444,7 @@ export const useApp = create<State>((set, get) => ({
         replies: result.suggestions?.length
           ? result.suggestions
           : [{ reply: result.reply, meaning: result.meaning, kind: 'confirm' }],
+        replyCards: modelCards.length ? modelCards : get().replyCards,
       });
     } catch (error) {
       if (get().version !== next) return;
@@ -401,6 +464,36 @@ export const useApp = create<State>((set, get) => ({
     set({ facts: setSpoken(get().facts, id, value), plan: null });
   },
 
+  /*
+   * 改英文句型时，近音要跟着重算，中文却**不能**跟着装懂。
+   *
+   * 用户在原来的句子上换个词（把 300 改成 500），中文意思大概率还成立；
+   * 但整句重写之后，原来那句中文就变成了猜测。所以改过的卡一律标
+   * 「中文是原句的意思，已不适用」，让他自己看一眼再念。
+   */
+  editReply: (id, en) => {
+    const text = en.trim();
+    set({
+      replyCards: get().replyCards.map((card) =>
+        card.id === id
+          ? {
+              ...card,
+              en: text,
+              zh: '（这行中文对应的是改之前的句子，改完请自己确认意思）',
+              segments: [
+                {
+                  en: text,
+                  zh: '',
+                  phon: text ? transliterate(text, 'English') : '',
+                },
+              ],
+              why: '你改过这一句：近音按新句子重算，中文不再保证对得上',
+            }
+          : card,
+      ),
+    });
+  },
+
   toggleFact: (id) => set({ facts: toggleRow(get().facts, id), plan: null }),
 
   buildConfirm: () => set({ plan: confirm(get().facts) }),
@@ -417,6 +510,7 @@ export const useApp = create<State>((set, get) => ({
       translateCorrected: false,
       translateMatched: null,
       translateVia: null,
+      translateCorrections: [],
       transcribeMode: null,
       source: null,
       facts: [],
@@ -425,6 +519,7 @@ export const useApp = create<State>((set, get) => ({
       replyText: '',
       replyMode: null,
       replies: [],
+      replyCards: [],
       elapsedMs: null,
       requestId: null,
       notice: null,

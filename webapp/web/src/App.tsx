@@ -8,6 +8,7 @@ import {
   hasVoiceFor,
   speak,
   startRecording,
+  stopSpeaking,
   type Capabilities,
   type MicError,
   type RecorderHandle,
@@ -17,6 +18,9 @@ import { hintsFor, needsWording } from './lib/pipeline';
 import { SOURCE_LANGUAGES, modeLabel, type Health, type SourceLanguage } from './api';
 import { toChineseSpeech, type NumericCheck } from '@shared/numeric-check';
 import type { TargetLanguage } from '@shared/types';
+import type { PlannedReply } from '@shared/reply-plan';
+import { REPLY_SOURCE_NOTE } from '@shared/reply-plan';
+import { ReplyCards } from './ReplyCards';
 
 /** 源语言 → 读音提示用的语言名（读音规则按原文语言走，不按界面语言走）。 */
 const HINT_TARGET: Record<SourceLanguage, TargetLanguage> = {
@@ -575,6 +579,24 @@ export function App() {
             <TranslationText text={state.translation} check={state.numericCheck} />
           </p>
           <NumericWarning check={state.numericCheck} />
+          {/*
+            模型对译文做过的修正要**说出来**。
+            「300美元」被剪成「300」如果不说，用户会以为模型本来就这么翻；
+            说清楚之后，他知道对方没提币种，核对时才会去问。
+          */}
+          {state.translateCorrections.length ? (
+            <ul className="mt-2 space-y-1" data-testid="translate-corrections">
+              {state.translateCorrections.map((code) => (
+                <li key={code} className="rounded-lg border border-warn/30 bg-warn/8 px-2 py-1 text-[11.5px] text-warn">
+                  {code === 'currency-removed'
+                    ? '译文里的币种已去掉：原话没有说明币种，模型自己补的不能算数'
+                    : code === 'reschedule-restored'
+                      ? '译文已补回「改到」：原话明确说了改期，只写「从…到…」会看不出哪个才有效'
+                      : `已修正：${code}`}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {hints && hints.text ? (
             <p className="muted mt-2 break-words text-[13px] leading-relaxed text-white/45">
               <span className="text-white/35">汉字近音（规则近似，不是标准音标）：</span>
@@ -606,14 +628,31 @@ export function App() {
                     {fact.value}
                   </span>
                   <ChineseReading value={fact.value} />
+                  {/*
+                    币种没说是**原话没说**，不是「默认美元」。
+                    `The deposit is 300` 的译文实测会补成「300美元」——
+                    补出来的币种一旦被当原话，用户核对时就等于替对方编了一个。
+                  */}
+                  {fact.kind === 'money' && !fact.currency ? (
+                    <Badge tone="warn">币种未说明</Badge>
+                  ) : null}
+                  {fact.role === 'origin' ? <Badge tone="warn">原安排，已改</Badge> : null}
+                  {fact.role === 'current' ? <Badge tone="real">现安排</Badge> : null}
+                  {fact.role === 'duration' ? <Badge tone="muted">时长</Badge> : null}
                   {fact.negated ? <Badge tone="warn">被对方否定，不作数</Badge> : null}
                   {fact.edited ? <Badge tone="real">已由你改成「{fact.value}」</Badge> : null}
                   {needsWording(fact) ? <Badge tone="warn">需补说法</Badge> : null}
+                  {/*
+                    来源必须说准。旧版这里一律写「原话：」，
+                    而译文中提出来的值（模型补的「300美元」）也被标成原话 ——
+                    用户看到的是「原话：300美元」，对方根本没说币种。
+                  */}
                   <span
                     id={`fact-src-${fact.id}`}
                     className="muted text-[11.5px] text-white/40"
                   >
-                    原话：{fact.sourceText}
+                    {fact.sourceField === 'translation' ? '译文中：' : '原话：'}
+                    {fact.sourceText}
                   </span>
                 </div>
                 {editing?.id === fact.id ? (
@@ -774,66 +813,34 @@ export function App() {
       ) : null}
 
       {/*
-        三条候选，不是一条。听障使用者要的是选择权：一条「好的，谢谢」
-        既不能确认理解、也不能请对方打字。
+        回复卡必须放在「重点信息」区块**外面**：hellow 这种问候没有可核对的
+        事实，facts 为空，区块不渲染 —— 回复也就跟着消失了（线上实测过）。
 
-        这一段必须放在「重点信息」区块**外面**：hellow 这种问候没有可核对的事实，
-        facts 为空，整个区块不渲染 —— 回复建议也就跟着消失了。实测线上就是这样，
-        输入 hellow 一条回复都看不到。
+        卡片内容由本地的 `planReplies()` 按当前事实拼，翻译成功即生成，
+        不依赖模型与网络；服务端真有模型时才换成 AI 建议并另行标注。
       */}
-      {state.replies.length ? (
-        <Section title="4 · 可以回的话" hint="翻译完自动生成；英语，请自己判断要不要说">
-          <div className="mt-3 rounded-xl border border-white/10 bg-white/4 p-3" data-testid="reply-list">
-            <p className="text-[11.5px] text-white/45">
-              可以回的话（
-              {/*
-                reply 的 `mock` 是**人工模板**，不是「预置演示结果」。两者都不是模型，
-                但一个能直接拿去用、一个只是示例，混在一句话里会让人误判能不能说。
-              */}
-              {state.replyMode === 'mock'
-                ? '人工模板句，不是 AI 生成'
-                : state.replyMode
-                  ? modeLabel(state.replyMode)
-                  : '未知来源'}
-              ；英语，请自己判断要不要说）
-            </p>
-            <ul className="mt-2 space-y-2">
-              {state.replies.map((item, index) => (
-                <li
-                  key={`${item.kind}-${index}`}
-                  className="rounded-lg border border-white/8 bg-ink-950/40 px-2.5 py-2"
-                >
-                  <p className="text-[15px] leading-snug text-white" data-testid={`reply-text-${index}`}>
-                    {item.reply}
-                  </p>
-                  <p className="mt-0.5 text-[12px] text-white/55">{item.meaning}</p>
-                  <div className="mt-1.5 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="rounded-lg border border-white/15 px-2 py-0.5 text-[11.5px] text-white/80"
-                      onClick={() => {
-                        const result = speak(item.reply, 'en-US');
-                        if (!result.ok && result.reason) setFileNotice(result.reason);
-                      }}
-                    >
-                      朗读
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-lg border border-white/15 px-2 py-0.5 text-[11.5px] text-white/80"
-                      onClick={() => {
-                        setCardSentence({ sentence: item.reply, meaning: item.meaning });
-                        setShowCard(true);
-                      }}
-                    >
-                      放大给对方看
-                    </button>
-                  </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-        </Section>
+      {state.replyCards.length ? (
+        <ReplyCards
+          cards={state.replyCards}
+          sourceNote={
+            state.replyMode && state.replyMode !== 'mock'
+              ? REPLY_SOURCE_NOTE.model
+              : REPLY_SOURCE_NOTE.rule
+          }
+          onSpeak={(text, rate) => {
+            const result = speak(text, 'en-US', {
+              rate,
+              onError: (reason) => setFileNotice(reason),
+            });
+            if (!result.ok && result.reason) setFileNotice(result.reason);
+          }}
+          onStop={() => stopSpeaking()}
+          onEdit={(id, en) => state.editReply(id, en)}
+          onShowBig={(card: PlannedReply) => {
+            setCardSentence({ sentence: card.en, meaning: card.zh });
+            setShowCard(true);
+          }}
+        />
       ) : null}
 
       <footer className="mt-6 text-[11.5px] leading-relaxed text-white/40">

@@ -163,13 +163,38 @@ export function hasVoiceFor(language: string): boolean {
   return speechSynthesis.getVoices().some((voice) => voice.lang.toLowerCase().startsWith(target));
 }
 
-export function speak(text: string, language: string): { ok: boolean; reason?: string } {
-  if (typeof speechSynthesis === 'undefined') return { ok: false, reason: '这个浏览器不支持朗读' };
+export function speak(
+  text: string,
+  language: string,
+  options: { rate?: number; onEnd?: () => void; onError?: (reason: string) => void } = {},
+): { ok: boolean; reason?: string } {
+  if (typeof speechSynthesis === 'undefined') {
+    return { ok: false, reason: '这个浏览器不支持朗读' };
+  }
   if (!hasVoiceFor(language)) {
     return { ok: false, reason: `这台设备没有 ${language} 的语音，装了语音包才能读` };
   }
+  /*
+   * 一次只念一句。
+   *
+   * 换一张回复卡却还在念上一张，是这类工具最常见的尴尬：举着手机给对方看，
+   * 喇叭里出来的却是刚才那句。所以这里先停掉旧的再开口。
+   */
+  speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = language;
+  if (options.rate) utterance.rate = options.rate;
+  if (options.onEnd) utterance.onend = () => options.onEnd?.();
+  utterance.onerror = (event) => {
+    // `canceled` 是我们自己停的，不是失败，别报错给用户。
+    if (event.error === 'canceled' || event.error === 'interrupted') return;
+    options.onError?.('朗读失败：设备语音引擎没有出声，可以改用复制或大字展示');
+  };
   speechSynthesis.speak(utterance);
   return { ok: true };
+}
+
+/** 停掉正在念的那句（换卡、离开页面时都要调）。 */
+export function stopSpeaking(): void {
+  if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
 }

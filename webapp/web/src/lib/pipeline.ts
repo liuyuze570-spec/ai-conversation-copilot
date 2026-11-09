@@ -26,6 +26,17 @@ export interface FactRow {
   value: string;
   /** 对方原话里的片段，用来核对「他到底怎么说的」。 */
   sourceText: string;
+  /**
+   * 片段取自哪个字段。`translation` 时要显示「译文中：」而不是「原话：」
+   * —— 旧版一律写「原话」，于是模型从译文里补的「300美元」被当成对方说的。
+   */
+  sourceField: 'original' | 'translation';
+  /** 金额币种（只从原话读）；`null` 表示原话没说，界面要写「币种未说明」。 */
+  currency?: string | null;
+  /** 改期中的位置：`origin` = 已作废的原安排。 */
+  role?: 'origin' | 'current' | 'duration';
+  /** 原话里这笔钱叫什么（deposit / remaining balance）。 */
+  labelEn?: string;
   negated: boolean;
   certainty: 'stated' | 'uncertain' | 'corrected';
   checked: boolean;
@@ -46,6 +57,10 @@ export function rowsFromDrafts(drafts: FactDraft[]): FactRow[] {
       label: FACT_LABELS[draft.kind] ?? draft.kind,
       value: draft.value,
       sourceText: draft.sourceText,
+      sourceField: draft.sourceField,
+      currency: draft.currency,
+      role: draft.role,
+      labelEn: draft.label,
       negated: Boolean(draft.negated),
       certainty: draft.certainty,
       // 默认勾选「当前理解、且没被否定」的，旧的否定值不预选。
@@ -111,6 +126,9 @@ export function confirm(rows: FactRow[]): ConfirmPlan {
       spokenSource: row.spoken ? 'user' : undefined,
       negated: row.negated,
       certainty: row.certainty,
+      currency: row.currency,
+      role: row.role,
+      label: row.labelEn,
     })),
     'English',
     'Chinese',

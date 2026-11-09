@@ -52,6 +52,21 @@ export const FACT_LABELS: Record<FactKind, string> = {
 export type FactCertainty = 'stated' | 'uncertain' | 'corrected';
 export type FactStatus = 'pending' | 'confirmed';
 
+/**
+ * 一条事实在「改期」这件事里的位置。
+ *
+ * 只有真实发生过改期的句子里才有值：
+ *  - `origin`  = 原来的安排（「from Wednesday morning」）——**已经不作数**，
+ *                界面上要划掉并标「原安排」，绝不能被当成当前时间；
+ *  - `current` = 现在的安排（「to Friday afternoon」）；
+ *  - `duration`= 时长（「last ninety minutes」）——改期不影响它，单独一条。
+ *
+ * 为什么必须显式存而不是靠顺序猜：同一句话里两个日期长得一模一样
+ * （都是 `Friday` 这种裸日期时尤其），顺序一错就会把旧时间当成新时间给出去，
+ * 而这是听障使用者最容易在事后吃亏的地方。
+ */
+export type FactRole = 'origin' | 'current' | 'duration';
+
 export interface FactItem {
   id: string;
   kind: FactKind;
@@ -61,6 +76,25 @@ export interface FactItem {
   sourceText: string;
   /** 片段取自哪个字段：原话还是译文。 */
   sourceField: 'original' | 'translation';
+  /**
+   * 金额的币种。**只从原话里读**，读不到就是 `null`。
+   *
+   * `null` 不等于「美元」：`The deposit is 300 and the remaining balance is 900.`
+   * 里一个币种词都没有，译文却是「300美元」—— 旧实现把译文的推断当成原话，
+   * 卡片上写「300美元」、原话一栏也写「300美元」，用户照着确认就等于替对方
+   * 编了一个币种。现在这种情况一律显示「币种未说明」。
+   */
+  currency?: string | null;
+  /** 改期中的位置（原安排 / 现安排 / 时长）。没有改期时为空。 */
+  role?: FactRole;
+  /**
+   * 这笔钱在原话里叫什么（`deposit` / `remaining balance` / `fee`）。
+   *
+   * 只从**原话**取，只用于拼英语句子：`Just to confirm, the deposit is 300
+   * and the remaining balance is 900.` 比「300 和 900」清楚得多——后者
+   * 对方根本不知道你在确认哪笔钱。
+   */
+  label?: string;
   /** 来源字幕 id（点击定位用）。 */
   itemId: string;
   /** 来源字幕是第几轮（排序 + 展示）。 */
@@ -116,6 +150,9 @@ export interface FactDraft {
   sourceField: 'original' | 'translation';
   certainty: FactCertainty;
   negated?: boolean;
+  currency?: string | null;
+  role?: FactRole;
+  label?: string;
 }
 
 /** 原话里的「不确定」语气词。命中就整条标 uncertain，不猜。 */
@@ -203,11 +240,28 @@ const TIME_PATTERNS: RegExp[] = [
  * 于是整句的日期一个都提不出来。
  */
 const DATE_PATTERNS: RegExp[] = [
+  /*
+   * 「周五下午」要整体认，不能只认到「周五」。
+   *
+   * 改期句 `from Wednesday morning to Friday afternoon` 里，丢掉
+   * morning/afternoon 之后两条事实变成「Wednesday」和「Friday」——
+   * 用户确认时会以为只是换了哪一天，而实际连上午/下午都变了。
+   * 长的写在前面只是习惯，`push()` 里会按「谁包含谁」去重。
+   */
+  /\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\s+(?:morning|afternoon|evening|night)\b/gi,
+  /(?:周|星期|礼拜)[一二三四五六日天]\s*(?:上午|下午|晚上|早上|中午)/g,
   /今[天日]|明[天日]|后[天日]|大后天|本?周[一二三四五六日天]|下周[一二三四五六日天]|这周|下个?月|这个月/g,
   /\b(?:today|tomorrow|tonight|this (?:mon|tues|wednes|thurs|fri|satur|sun)day|next (?:week|month|mon|tues|wednes|thurs|fri|satur|sun)day)\b/gi,
   /\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b/gi,
   /\b(?:сегодня|завтра|послезавтра)\b/gi,
   /\bв (?:понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)\b/gi,
+  /*
+   * 英文序数日期：`the 15th, not the 16th`。对方嘴里的「15 号」就是这种
+   * 形态 —— 不认它的话整句日期直接消失，用户没得核对。
+   * 只认 1–31，序数词尾写全（st/nd/rd/th），避免把「the 3rd party」
+   * 之外的东西也捞进来（1–31 + 词尾已足够挑）。
+   */
+  /\bthe\s+\d{1,2}(?:st|nd|rd|th)\b/gi,
   /(?:今日|明日|明後日|来週|今週|月曜日|火曜日|水曜日|木曜日|金曜日|土曜日|日曜日)/g,
   /(?:오늘|내일|모레|이번 주|다음 주|월요일|화요일|수요일|목요일|금요일|토요일|일요일)/g,
 ];
@@ -355,6 +409,111 @@ function dedupe(values: string[]): string[] {
  * 返回的 `sourceField` 标出片段出自原话还是译文 —— 界面和校验都靠它。
  * 同一句话里相同的值只保留一次（中英文各匹配到「3 pm」不会出两张卡）。
  */
+/**
+ * 时长：`ninety minutes` / `90分钟` / `2 hours`。
+ *
+ * 改期句里它必须单独成一条：`The rehearsal has moved from Wednesday morning
+ * to Friday afternoon. It will still last ninety minutes.` —— 时间改了两处、
+ * 时长没变，这一点恰恰是听障使用者最容易漏掉的（他只知道「改期了」，
+ * 不知道要留多久）。旧规则没有时长这一类，整句里这个信息就丢了。
+ */
+const DURATION_PATTERN =
+  /\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?\s*(?:minutes?|mins?|hours?|hrs?)\b|\d+\s*(?:分钟|个小时|小时)|[\d一二三四五六七八九十]+\s*(?:時間|分間)/gi;
+
+/** 明确表示「改了时间」的说法。没命中就不谈原/现，一律按普通事实处理。 */
+const RESCHEDULE_SIGNAL =
+  /\b(?:moved?|moves|changed?|changes|rescheduled?|postponed?|pushed\s+back|pushed\s+to|brought\s+forward|shifted|switched)\b|改到|改期|改为|改在|延到|延期|推迟|提前到|调到|変更|延期|変更になり|변경|연기/i;
+
+const FROM_MARK = /\bfrom\b|从|由|から|부터/gi;
+const TO_MARK = /\bto\b|到|至|へ|로/gi;
+
+/**
+ * 这句话在不在讲「改期」。
+ *
+ * 只看动词，不看时间词 —— 「会议在周五」不是改期，「会议从周三改到周五」才是。
+ */
+export function looksRescheduled(text: string): boolean {
+  return RESCHEDULE_SIGNAL.test(text ?? '');
+}
+
+/**
+ * 给一句话里的若干值标上「原安排 / 现安排」。
+ *
+ * 判据只有一个：值前面**最近的那个**介词是 `from`（从/由）就是原安排，
+ * 是 `to`（到/至）就是现安排。不按出现顺序猜 ——
+ * `moved to Friday from Wednesday`（倒装）和「会议从周三改到周五」
+ * 顺序相反，按顺序猜必然有一条错。
+ *
+ * 返回 null 表示这句话没在讲改期，调用方保持原样。
+ */
+function rescheduleRoles(text: string, values: string[]): Map<string, FactRole> | null {
+  if (!values.length || !looksRescheduled(text)) return null;
+  const roles = new Map<string, FactRole>();
+  const marks: { index: number; role: FactRole }[] = [];
+  for (const m of text.matchAll(FROM_MARK)) marks.push({ index: m.index ?? 0, role: 'origin' });
+  for (const m of text.matchAll(TO_MARK)) marks.push({ index: m.index ?? 0, role: 'current' });
+  marks.sort((a, b) => a.index - b.index);
+
+  for (const value of values) {
+    const at = text.toLowerCase().indexOf(value.toLowerCase());
+    if (at < 0) continue;
+    let role: FactRole | null = null;
+    for (const mark of marks) {
+      if (mark.index < at) role = mark.role;
+      else break;
+    }
+    if (role) roles.set(value, role);
+  }
+  return roles;
+}
+
+/**
+ * 原话里「某笔钱叫什么」。
+ *
+ * `The deposit is 300 and the remaining balance is 900.`
+ *  → { 300: 'deposit', 900: 'remaining balance' }
+ *
+ * 只认 `X is 300` 这种直白结构，X 最多四个词。认不出就不给标签，
+ * 句子退回「300 and 900」——不猜「300 大概是押金」这种事。
+ */
+function moneyLabels(text: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const pattern =
+    /\b([A-Za-z][A-Za-z' -]{0,28}?)\s+(?:is|are|was|were|=)\s+(?:about\s+|around\s+)?\$?(\d[\d,]*(?:\.\d+)?)/gi;
+  for (const match of text.matchAll(pattern)) {
+    const label = match[1]
+      .trim()
+      .toLowerCase()
+      // 「…and the remaining balance is 900」里，X 前面连着上个分句的 and，要去掉。
+      .replace(/^(?:and|or|then)\s+/, '')
+      .replace(/^(?:the|a|an|its|their|your|our|my)\s+/, '');
+    if (!label || label.split(/\s+/).length > 4) continue;
+    const value = Number(match[2].replace(/,/g, ''));
+    if (!Number.isFinite(value)) continue;
+    out.set(String(value), label);
+  }
+  return out;
+}
+
+/** 原话里有没有提到任何币种。没有就绝不能补。 */
+export function currencyMentioned(text: string): boolean {
+  return currencyOf(text ?? '') !== null;
+}
+
+const CURRENCY_WORD_IN_TEXT =
+  /\s*(?:美元|美金|欧元|日元|日圆|英镑|人民币|块钱|dollars?|euros?|yen|pounds?|rubles?|usd|eur|gbp|cny|rmb|[¥$€£])/gi;
+
+/**
+ * 从值里去掉币种词。
+ *
+ * 只用于**译文**：原话没提币种，译文却写了「300美元」时，把「美元」剪掉，
+ * 剩下「300」。剪完如果连数字都不剩，就整条丢掉（那条本来就是译文瞎补的）。
+ */
+function stripCurrency(value: string): string {
+  const cut = value.replace(CURRENCY_WORD_IN_TEXT, '').trim();
+  return cut;
+}
+
 export function extractFactsWithRules(item: {
   originalText: string;
   translatedText?: string;
@@ -369,7 +528,17 @@ export function extractFactsWithRules(item: {
   const drafts: FactDraft[] = [];
   const seen = new Set<string>();
 
-  const push = (kind: FactKind, values: string[], field: 'original' | 'translation', text: string) => {
+  const push = (
+    kind: FactKind,
+    values: string[],
+    field: 'original' | 'translation',
+    text: string,
+    extra?: {
+      currency?: string | null;
+      roleOf?: (value: string) => FactRole | undefined;
+      labelOf?: (value: string) => string | undefined;
+    },
+  ) => {
     /*
      * 同一条时间会被两条规则同时命中：「10:30 a.m」既符合 `\d{1,2}:\d{2}`，
      * 也符合「数字 + am/pm」。两条都留下的话，卡片上一行「10:30」一行
@@ -386,6 +555,27 @@ export function extractFactsWithRules(item: {
     );
     for (const value of unique) {
       /*
+       * 译文补的币种必须剪掉。
+       *
+       * `The deposit is 300 and the remaining balance is 900.` 的译文实测是
+       * 「存款300美元,剩余余额900美元。」——原话一个币种词都没有。把这条
+       * 直接当事实，用户核对时会确认一个对方根本没说的币种。
+       * 所以：**原话没提币种，译文里的币种词一律不算数**。
+       */
+      const shown = kind === 'money' && field === 'translation' && !extra?.currency
+        ? stripCurrency(value)
+        : value;
+      /*
+       * 金额值里得有个「数」。数字、汉字数字都行；拼写英文（fifteen thousand）
+       * 也行 —— 样例 3「预算一万五，不是五万」的原文就是纯拼写，没有数字，
+       * 这条守卫写成「只认数字」会把两条金额一起杀光。
+       */
+      const looksLikeAmount = /\d|零一二三四五六七八九十/.test(shown) ||
+        /\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million)\b/i.test(
+          shown,
+        );
+      if (!shown || (kind === 'money' && !looksLikeAmount)) continue;
+      /*
        * 被否定的值：标 `corrected` + `negated`，界面能直接读出纠正关系。
        *
        * 这里**按值**判断，不再按整句判断。旧写法是 `certaintyOf(text)` 先给
@@ -401,7 +591,6 @@ export function extractFactsWithRules(item: {
        * 事实要同时给中文用户和日语用户看。被否定这件事由 `negated` 字段带出去，
        * 界面用一句对应语言的话说「被否定」+ 划掉旧值，比在值里塞词干净。
        */
-      const shown = value;
       const key = `${kind}|${shown.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -412,15 +601,68 @@ export function extractFactsWithRules(item: {
         sourceField: field,
         certainty: negated ? 'corrected' : looksHedged(text) ? 'uncertain' : 'stated',
         negated: negated || undefined,
+        currency: extra?.currency,
+        role: extra?.roleOf?.(value),
+        label: extra?.labelOf?.(value),
       });
     }
   };
 
+  /*
+   * 币种只看**原话**。
+   *
+   * 译文的币种是模型推断，原话的币种是证据。两者不能混：
+   * 原话 `300` → 币种未知；原话 `300 dollars` → USD。
+   */
+  const originalCurrency = currencyOf(item.originalText ?? '');
+
   for (const { field, text } of fields) {
-    push('money', matchAll(text, MONEY_PATTERNS), field, text);
-    // 拼写金额（fifteen thousand dollars）要在数量之前跑：它更具体，先占住位置。
+    /*
+     * 金额：原话侧多一类「裸数字」。
+     *
+     * `The deposit is 300` 里 300 没有任何货币标记，旧规则一条金额都提不出来
+     * ——因为那条金额是模型从**译文**（「300美元」）里补出来的，也顺带补出了
+     * 一个原文没有的币种。现在反过来：句子在谈钱（deposit / balance / fee…）
+     * 时，裸数字就算金额，币种留空。
+     */
+    const money = matchAll(text, MONEY_PATTERNS);
     const wordMoney = matchAll(text, [WORD_MONEY_PATTERN]);
-    push('money', wordMoney, field, text);
+    const moneyValues = [...money, ...wordMoney];
+    if (field === 'original' && MONEY_CONTEXT.test(text)) {
+      /*
+       * 先把时间表达式的字符区间划出来，落在里面的数字不许进金额。
+       *
+       * 拿「值本身」去试时间正则是错的：`2 p.m.` 里的 2 单独拿出来不再
+       * 像时间，于是它漏进了金额 —— 卡上多出一条「金额 2」，看起来像
+       * 对方报了个 2 块钱。区间判断认的是**原文位置**，不认拆出来的片段。
+       */
+      const timeSpans: Array<[number, number]> = [];
+      for (const pattern of TIME_PATTERNS) {
+        const probe = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`);
+        for (const match of text.matchAll(probe)) {
+          timeSpans.push([match.index, match.index + match[0].length]);
+        }
+      }
+      const inTimeSpan = (index: number) =>
+        timeSpans.some(([start, end]) => index >= start && index < end);
+      const bare = [...text.matchAll(/\b\d{1,3}(?:,\d{3})*(?:\.\d+)?\b/g)]
+        .filter((match) => !inTimeSpan(match.index))
+        .map((match) => match[0])
+        .filter(
+          (value) =>
+            !moneyValues.some((hit) => hit.includes(value)),
+        );
+      moneyValues.push(...bare);
+    }
+    const labels = field === 'original' ? moneyLabels(text) : new Map<string, string>();
+    push('money', moneyValues, field, text, {
+      currency: originalCurrency ?? null,
+      labelOf: (value) => {
+        const key = numericKeyOf(value);
+        return key == null ? undefined : labels.get(String(key));
+      },
+    });
+    // 拼写金额（fifteen thousand dollars）要在数量之前跑：它更具体，先占住位置。
     /*
      * 不带货币单位的拼写数字（fifteen thousand）归哪一类，看句子在不在谈钱。
      *
@@ -429,14 +671,33 @@ export function extractFactsWithRules(item: {
      * 和「数量：fifteen thousand」两张卡，同一件事出现两遍。
      */
     const spelled = matchAll(text, [WORD_NUMBER_PATTERN]).filter(
-      (value) => !wordMoney.some((money) => money.toLowerCase().includes(value.toLowerCase())),
+      (value) => !wordMoney.some((hit) => hit.toLowerCase().includes(value.toLowerCase())),
     );
-    push(MONEY_CONTEXT.test(text) ? 'money' : 'quantity', spelled, field, text);
+    push(
+      MONEY_CONTEXT.test(text) ? 'money' : 'quantity',
+      spelled,
+      field,
+      text,
+      { currency: originalCurrency ?? null },
+    );
     // 时间要在日期之前跑：「下周三点」这种说法很少见，但「明天三点」很常见，
     // 两边都命中时用户看到的是两条不同的卡（日期 + 时间），这是对的。
-    push('time', matchAll(text, TIME_PATTERNS), field, text);
-    push('date', matchAll(text, DATE_PATTERNS), field, text);
+    const times = matchAll(text, TIME_PATTERNS);
+    const dates = matchAll(text, DATE_PATTERNS);
+    const roles = rescheduleRoles(text, [...dates, ...times]);
+    const roleOf = (value: string): FactRole | undefined => roles?.get(value);
+    push('time', times, field, text, { roleOf });
+    push('date', dates, field, text, { roleOf });
     push('quantity', matchAll(text, QUANTITY_PATTERNS), field, text);
+    /*
+     * 时长单独一类，兼作改期句的「不变项」。
+     *
+     * 改期句里最容易被忽略的是「时长没变」：用户以为整件事都变了，
+     * 到场才发现要留 90 分钟。所以它必须有自己的一条卡。
+     */
+    push('quantity', matchAll(text, [DURATION_PATTERN]), field, text, {
+      roleOf: () => 'duration',
+    });
   }
 
   return mergeBilingual(drafts);
@@ -503,7 +764,26 @@ function mergeBilingual(drafts: FactDraft[]): FactDraft[] {
           (candidate, index) => !usedSrc.has(index) && numericKeyOf(candidate.value) === zhNum,
         );
       }
-      // 数值对不上（时间/日期的文字写法）就退回「第一个还没被用掉的」。
+      /*
+       * 数值对不上（日期这类文字写法）时，先按「否定状态 + 改期位置」挑，
+       * 再退回「第一个还没被用掉的」。
+       *
+       * 中文日期的抽取顺序跟出现顺序无关（按模式逐个扫全句），实测
+       * 「不在周二，改到周四上午」先抓到的是「周四上午」。盲配第一个
+       * 会让「周四上午」配上原话 Tuesday —— 不但原话引错，连否定标记都
+       * 跟着串过去：周四被划掉、周二成了当前安排，正好和事实相反。
+       */
+      if (matchIndex < 0) {
+        const compatible = (candidate: FactDraft) =>
+          Boolean(candidate.negated) === Boolean(zh.negated) &&
+          (candidate.role ?? undefined) === (zh.role ?? undefined);
+        matchIndex = bucket.src.findIndex((candidate, index) => !usedSrc.has(index) && compatible(candidate));
+        if (matchIndex < 0) {
+          matchIndex = bucket.src.findIndex(
+            (candidate, index) => !usedSrc.has(index) && Boolean(candidate.negated) === Boolean(zh.negated),
+          );
+        }
+      }
       if (matchIndex < 0) matchIndex = bucket.src.findIndex((_, index) => !usedSrc.has(index));
       if (matchIndex < 0) continue;
       usedSrc.add(matchIndex);
@@ -520,6 +800,16 @@ function mergeBilingual(drafts: FactDraft[]): FactDraft[] {
       merged.set(zh, {
         ...zh,
         sourceText: src.sourceText,
+        /*
+         * 币种与改期位置都以**原话**为准。
+         *
+         * 译文这一侧只提供中文读法（「一万五千」「周五下午」），
+         * 它推不出币种，也不该决定哪个是旧安排 —— 它连「from / to」
+         * 都可能翻丢（实测「从周三改到周五」被翻成「从周三到周五」）。
+         */
+        currency: src.currency !== undefined ? src.currency : zh.currency,
+        role: src.role ?? zh.role,
+        label: src.label ?? zh.label,
         negated: negated || undefined,
         certainty: negated
           ? 'corrected'
@@ -653,6 +943,12 @@ export interface ConfirmInput {
   spokenSource?: 'user' | 'derived';
   negated?: boolean;
   certainty?: string;
+  /** 金额币种；`null` 表示原话没说，确认句里不许补。 */
+  currency?: string | null;
+  /** 改期位置：`origin` 是旧安排，**不进**当前理解。 */
+  role?: FactRole;
+  /** 原话里这笔钱叫什么（deposit / remaining balance）。 */
+  label?: string;
 }
 
 export type SpokenBlockReason = 'number' | 'currency' | 'time' | 'derive';
@@ -1016,6 +1312,15 @@ export function checkSentenceAgainstFacts(
 
   for (const fact of facts) {
     if (fact.negated) continue;
+    /*
+     * 「原安排」不进必含集合。
+     *
+     * 它出现在句子里是**故意**的（`instead of Wednesday morning`）：
+     * 改期确认句必须同时提到旧的和新的，对方才知道你在确认哪次变更。
+     * 旧实现要求「改前值不许在」，于是这种句子永远过不了闸 —— 而那恰好
+     * 是用户最需要的一句。
+     */
+    if (fact.role === 'origin') continue;
     for (const number of valueNumbers(fact.value)) required.add(number);
     for (const day of weekdaysIn(fact.value)) requiredDays.add(day);
     if (fact.edited) {
@@ -1057,6 +1362,7 @@ export function checkSentenceAgainstFacts(
   const meaningNumbers = new Set(expandedNumbers(meaning));
   const needForMeaning = new Set<number>();
   for (const fact of facts) {
+    if (fact.role === 'origin') continue;
     for (const number of expandedNumbers(fact.value)) needForMeaning.add(number);
   }
   const meaningMissing = [...needForMeaning].filter((number) => !meaningNumbers.has(number));
@@ -1064,6 +1370,75 @@ export function checkSentenceAgainstFacts(
     return { ok: false, message: '释义和改后的数值对不上，已拦下' };
   }
   return { ok: true };
+}
+
+/**
+ * 改期确认句。
+ *
+ * 拼法（英语）：
+ *   `Just to confirm, it's now Friday afternoon instead of Wednesday morning,
+ *    and it will still last ninety minutes. Is that right?`
+ *
+ * 三件事必须同时出现，少一样都不算说清：
+ *  1. **现在**是什么（current）；
+ *  2. **原来**是什么，并且明确说「不是它」（instead of origin）——
+ *     只说「周五下午」的话，对方会以为你确认的是另一个约；
+ *  3. 时长若出现，要说明「还是这么久」（still）。
+ */
+function planRescheduleSentence(
+  originFacts: ConfirmInput[],
+  movedFacts: ConfirmInput[],
+  targetLanguage: string,
+  comprehension: string,
+): ConfirmPlan | null {
+  const origin = originFacts[0];
+  const now = movedFacts.find((fact) => fact.role === 'current');
+  if (!origin || !now) return null;
+  const duration = movedFacts.find((fact) => fact.role === 'duration');
+
+  const spokenOf = (fact: ConfirmInput): string | null => {
+    const derived = deriveSpoken(fact, targetLanguage);
+    return derived.ok ? derived.text : null;
+  };
+  const nowText = spokenOf(now);
+  const originText = spokenOf(origin);
+  if (!nowText || !originText) return null;
+  const durText = duration ? spokenOf(duration) : null;
+
+  const zhOf = (fact: ConfirmInput): string => {
+    const raw = fact.value.trim();
+    if (!/[A-Za-z]/.test(raw)) return raw;
+    const zh = toChineseSpeech(raw);
+    return zh && !/[A-Za-z]/.test(zh) ? zh : raw;
+  };
+
+  let sentence: string;
+  let meaning: string;
+  if (targetLanguage === 'English') {
+    sentence =
+      `Just to confirm, it's now ${nowText} instead of ${originText}` +
+      (durText ? `, and it will still last ${durText}` : '') +
+      '. Is that right?';
+  } else if (targetLanguage === 'Japanese') {
+    sentence =
+      `確認ですが、${nowText}に変更され、${originText}ではなくなりました` +
+      (durText ? `。所要時間は変わらず${durText}です` : '') +
+      '。合っていますか。';
+  } else {
+    // 其他目标语言没有可用词表，交给通用拼法，不硬造句子。
+    return null;
+  }
+  meaning =
+    `我理解的是：现在改到${zhOf(now)}，不是原来的${zhOf(origin)}` +
+    (durText ? `，时长还是${zhOf(duration as ConfirmInput)}` : '') +
+    '，对吗？';
+
+  const check = checkSentenceAgainstFacts(sentence, meaning, [
+    now,
+    ...(duration ? [duration] : []),
+  ]);
+  if (!check.ok) return null;
+  return { ok: true, sentence, meaning, blocked: [] };
 }
 
 /**
@@ -1088,6 +1463,49 @@ export function planConfirmSentence(
      */
     (fact) => !fact.negated && fact.value.trim(),
   );
+  /*
+   * 改期句单独走一条路径。
+   *
+   * `The rehearsal has moved from Wednesday morning to Friday afternoon.`
+   * 按通用规则拼出来是「Just to confirm, Wednesday morning and Friday
+   * afternoon. Is that right?」—— 两个日期并列，对方听不出哪个才是现在的，
+   * 用户自己也会把旧时间当成新时间去。改期必须**说出变更关系**：
+   * `it's now Friday afternoon instead of Wednesday morning`。
+   */
+  const originFacts = current.filter((fact) => fact.role === 'origin');
+  const movedFacts = current.filter((fact) => fact.role !== 'origin');
+  if (originFacts.length && movedFacts.some((fact) => fact.role === 'current')) {
+    const change = planRescheduleSentence(originFacts, movedFacts, targetLanguage, comprehension);
+    if (change) return change;
+  }
+  /*
+   * 一笔一笔的钱，要说清「哪笔是多少」。
+   *
+   * 「Just to confirm, 300 and 900.」对方根本不知道你在确认哪两笔；而
+   * `the deposit is 300 and the remaining balance is 900` 是原话的结构，
+   * 一个词都不是新编的（label 取自原句 `X is 300` 的 X）。
+   *
+   * 原话没说币种时**不补**，改成直接问：
+   * `What currency are these amounts in?` —— 这是使用者真的需要问出口的一句。
+   */
+  if (targetLanguage === 'English' && movedFacts.length && movedFacts.every((fact) => fact.kind === 'money')) {
+    const labelled = movedFacts.filter((fact) => (fact.label ?? '').trim());
+    if (labelled.length === movedFacts.length && labelled.length <= 3) {
+      const pairs = labelled.map((fact) => ({
+        label: (fact.label ?? '').trim(),
+        value: fact.value.trim(),
+        hasCurrency: currencyMentioned(fact.value) || Boolean(fact.currency),
+      }));
+      const noCurrency = pairs.some((pair) => !pair.hasCurrency);
+      const clause = pairs.map((pair) => `the ${pair.label} is ${pair.value}`).join(' and ');
+      const sentence = `Just to confirm, ${clause}.${noCurrency ? ' What currency are these amounts in?' : ' Is that right?'}`;
+      const meaning =
+        `我理解的是：${pairs.map((pair) => `${pair.label} 是 ${pair.value}`).join('、')}` +
+        `${noCurrency ? '（币种未说明）' : ''}，对吗？`;
+      const check = checkSentenceAgainstFacts(sentence, meaning, labelled);
+      if (check.ok) return { ok: true, sentence, meaning, blocked: [] };
+    }
+  }
   if (!current.length) {
     return {
       ok: false,
@@ -1107,7 +1525,7 @@ export function planConfirmSentence(
    * 只对封闭集合（金额 / 时间 / 星期 / 相对日期）做口语化，其余保持原值。
    */
   const wantChinese = comprehension === 'Chinese' || comprehension === 'zh' || comprehension === 'zh-CN';
-  for (const fact of current.slice(0, 4)) {
+  for (const fact of movedFacts.slice(0, 4)) {
     const derived = deriveSpoken(fact, targetLanguage);
     if (!derived.ok) {
       blocked.push({
@@ -1133,7 +1551,17 @@ export function planConfirmSentence(
     // 口语化不能丢数值：读出来的数必须和卡片上的值是同一批数
     const keepsNumbers =
       chineseOnly && expandedNumbers(raw).every((n) => expandedNumbers(zh).includes(n));
-    const forMeaning = keepsNumbers ? zh : raw;
+    let forMeaning = keepsNumbers ? zh : raw;
+    /*
+     * 释义里也要说清「没说币种」。
+     *
+     * 卡片上是「300」、释义写「我理解的是300」时，用户会顺口补一个「美元」——
+     * 而这正是对方没说的事。宁可在自己看的那一行写清楚，也别让他在
+     * 念出来的时候才想起来问。
+     */
+    if (fact.kind === 'money' && !currencyMentioned(raw)) {
+      forMeaning = `${forMeaning}（币种未说明）`;
+    }
     if (!understood.includes(forMeaning)) understood.push(forMeaning);
   }
 
@@ -1154,7 +1582,12 @@ export function planConfirmSentence(
    */
   const joinTail = (last: string, tail: string): string =>
     /[.!?]$/.test(last.trim()) && /^[.!?]/.test(tail) ? tail.slice(1) : tail;
-  const sentence = `${spokenTpl.lead}${spoken.join(confirmJoiner(targetLanguage))}${joinTail(spoken[spoken.length - 1], spokenTpl.tail)}`;
+  /*
+   * 两条事实用 `and`，三条以上用逗号。
+   * 「300, 900」念出来是两个孤立的数，「300 and 900」才像在说话。
+   */
+  const joiner = confirmJoiner(targetLanguage);
+  const sentence = `${spokenTpl.lead}${spoken.join(joiner)}${joinTail(spoken[spoken.length - 1], spokenTpl.tail)}`;
   const meaning = `${meaningTpl.lead}${understood.join(confirmJoiner(comprehension))}${joinTail(understood[understood.length - 1], meaningTpl.tail)}`;
 
   const check = checkSentenceAgainstFacts(sentence, meaning, current);

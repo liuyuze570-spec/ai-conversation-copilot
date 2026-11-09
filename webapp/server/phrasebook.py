@@ -1055,3 +1055,76 @@ def drop_repeated_tail(text: str) -> str:
         trimmed = out[: breaks[-1].start()].strip()
         return trimmed or out
     return out
+
+
+# --------------------------------------------------------------------------- #
+# 译文的「模型自作主张」修正
+# --------------------------------------------------------------------------- #
+#
+# 本地模型有两类稳定可复现的编造，都是听障使用者照着重说就会出事的那种：
+#
+#   1. 补币种：`The deposit is 300` → 「存款300美元」（原话没有任何币种）；
+#   2. 丢改期：`has moved from Wednesday morning to Friday afternoon`
+#      → 「从星期三上午到星期五下午」（变成了"从…到…"的并列，听不出改过）。
+#
+# 两类都只能在出译文之后修，因为模型自己不会告诉我们它加了什么。修正一律
+# **只减不增**：去掉模型加的币种、把丢掉的「改」补成中文里明确的「改到」，
+# 不引入任何原话没有的信息。
+
+# 多字币种直接剪；单字「元 / 块」只剪紧跟在数字后面的那种，
+# 否则「元素」「一块儿」这类普通词会被误伤。
+_CURRENCY_IN_ZH = re.compile(
+    r"\s*(?:美元|美金|欧元|日元|日圆|英镑|人民币|卢布)|(?<=\d)\s*(?:元|块)", re.UNICODE
+)
+_CURRENCY_IN_EN = re.compile(
+    r"\b(?:usd|dollars?|euros?|yen|pounds?|rubles?|rmb|cny)\b|[¥$€£]", re.IGNORECASE
+)
+
+
+def mentions_currency(text: str) -> bool:
+    """原话里有没有提到币种。"""
+    return bool(_CURRENCY_IN_EN.search(text or "") or _CURRENCY_IN_ZH.search(text or ""))
+
+
+def strip_invented_currency(original: str, translation: str) -> tuple[str, bool]:
+    """原话没提币种、译文却补了 → 把译文里的币种剪掉。
+
+    返回 (新译文, 是否改动过)。改动过的要在响应里带标记，界面才能说清
+    「这一处是模型加的，已去掉」，而不是默默改掉用户的译文。
+    """
+    if not translation or mentions_currency(original):
+        return translation, False
+    if not _CURRENCY_IN_ZH.search(translation):
+        return translation, False
+    trimmed = _CURRENCY_IN_ZH.sub("", translation)
+    # 剪完不能把整句剪空，也不能把数字剪掉。
+    if not re.search(r"\d", trimmed):
+        return translation, False
+    return trimmed, True
+
+
+_RESCHEDULE_EN = re.compile(
+    r"\b(?:moved?|changed?|rescheduled?|postponed?|pushed\s+back|brought\s+forward|shifted)\b"
+    r"|\bfrom\b[^.]{0,40}\bto\b",
+    re.IGNORECASE,
+)
+_FROM_TO_ZH = re.compile(r"从([^，,。；;]{1,24}?)(?:到|至)([^，,。；;]{1,24})")
+
+
+def express_reschedule(original: str, translation: str) -> tuple[str, bool]:
+    """原话在讲改期，译文却只是「从A到B」→ 补成「由A改到B」。
+
+    这是**把丢掉的语义补回来**，不是加新信息：原文里 `moved` 明确说了
+    「改」，译文里没有，用户读到的是「从周三到周五」，会以为两个时间都有效。
+    """
+    if not translation or not _RESCHEDULE_EN.search(original or ""):
+        return translation, False
+    if "改" in translation or "变更" in translation:
+        return translation, False
+    match = _FROM_TO_ZH.search(translation)
+    if not match:
+        return translation, False
+    old, new = match.group(1).strip(), match.group(2).strip()
+    rebuilt = f"由{old}改到{new}"
+    replaced = translation[: match.start()] + rebuilt + translation[match.end():]
+    return replaced, True

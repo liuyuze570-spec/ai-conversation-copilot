@@ -1,0 +1,103 @@
+{
+  "base": "http://127.0.0.1:8899",
+  "steps": [
+    {
+      "name": "A-translation",
+      "data": "存款300,剩余余额900。"
+    },
+    {
+      "name": "A1 译文不补币种",
+      "data": "PASS"
+    },
+    {
+      "name": "A2 修正提示出现",
+      "data": "PASS"
+    },
+    {
+      "name": "A3 事实卡标「币种未说明」",
+      "data": "PASS"
+    },
+    {
+      "name": "A4 事实卡引原话数字",
+      "data": "PASS"
+    },
+    {
+      "name": "A5 不把「300美元」标成原话",
+      "data": "PASS"
+    },
+    {
+      "name": "A6 回复卡≥3 张",
+      "data": "PASS"
+    },
+    {
+      "name": "A7 首卡确认金额并问币种",
+      "data": "PASS"
+    },
+    {
+      "name": "A8 回复卡有中文意思",
+      "data": "PASS"
+    },
+    {
+      "name": "A9 分段近音（开关打开后）有内容且分了段",
+      "data": "PASS"
+    },
+    {
+      "name": "A10 近音开关存在",
+      "data": "PASS"
+    },
+    {
+      "name": "B-translation",
+      "data": "排练由星期三上午改到星期五下午,仍持续90分钟。"
+    },
+    {
+      "name": "B1 译文能听出「改到」",
+      "data": "PASS"
+    },
+    {
+      "name": "B2 周五不与周三平起平坐（原安排有标记）",
+      "data": "PASS"
+    },
+    {
+      "name": "B3 时长单独成卡",
+      "data": "PASS"
+    },
+    {
+      "name": "B4 首卡表达变更关系",
+      "data": "PASS"
+    },
+    {
+      "name": "C-translation",
+      "data": "预约时间是星期三下午4时20分,不是星期四。"
+    },
+    {
+      "name": "C1 周四标为不作数",
+      "data": "PASS"
+    },
+    {
+      "name": "C2 周三是有效安排",
+      "data": "PASS"
+    },
+    {
+      "name": "C3 回复卡不把周四当有效日期",
+      "data": "PASS"
+    },
+    {
+      "name": "C4 回复卡有「不是周四」类确认",
+      "data": "PASS"
+    },
+    {
+      "name": "R1 放大卡能打开且回复句在里面",
+      "data": "PASS"
+    },
+    {
+      "name": "R1-bigcard",
+      "data": "把屏幕转向对方Just to confirm, 4:20 p.m, Wednesday. Is that right?我"
+    },
+    {
+      "name": "console 无错误",
+      "data": "PASS"
+    }
+  ],
+  "failures": [],
+  "consoleErrors": []
+}

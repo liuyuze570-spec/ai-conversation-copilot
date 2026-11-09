@@ -35,11 +35,16 @@ from engine_mt import MTResult, UpstreamError, build_mt_chain, choose_mt
 from engine_mt_multi import build_cascade, supported_codes
 from engine_mt_onnx import OnnxOpusMT
 from engine_reply import ReplyError, build_reply_chain, choose_reply
-from phrasebook import drop_repeated_tail, looks_degenerate
+from phrasebook import (
+    drop_repeated_tail,
+    express_reschedule,
+    looks_degenerate,
+    strip_invented_currency,
+)
 from phrasebook import lookup as phrase_lookup
 
-VERSION = "0.7.0-web.6"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
-BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web6-2026-11-09")
+VERSION = "0.7.0-web.7"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
+BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web7-2026-11-09")
 # 每个进程一个短 ID：用来判「请求是不是被不同实例/重启后的进程接走的」。
 # 不含任何用户数据，可以安全地出现在 /api/health 里。
 BOOT_ID = secrets.token_hex(4)
@@ -586,6 +591,20 @@ def translate(request: Request, body: TranslateBody) -> JSONResponse:
     # 这是**字符级**复述，逗号两侧并不是同一个词，`no_repeat_ngram` 抓不到，
     # 只能在出来之后剪掉。判据刻意收窄，见 `phrasebook.drop_repeated_tail`。
     result.translation = drop_repeated_tail(result.translation)
+    # 模型自作主张的两处修正（都只在**原话没有相应信息**时才动手）：
+    #   1. 原话没提币种，译文却写「300美元」→ 剪掉，并把这件事记进 corrections；
+    #   2. 原话说 `moved from … to …`，译文却只写「从…到…」→ 补成「由…改到…」。
+    # 两者都不新增任何原话没有的信息；改过就在响应里标出来，界面能说清
+    # 「这里是模型加的 / 这里模型漏了」，而不是悄悄替换用户的译文。
+    corrections: list[str] = []
+    trimmed, currency_fixed = strip_invented_currency(text, result.translation)
+    if currency_fixed:
+        result.translation = trimmed
+        corrections.append("currency-removed")
+    rebuilt, reschedule_fixed = express_reschedule(text, result.translation)
+    if reschedule_fixed:
+        result.translation = rebuilt
+        corrections.append("reschedule-restored")
     LOG.info(
         "translate id=%s lang=%s mode=%s chars=%d ms=%d routes=%s",
         request.state.request_id,
@@ -600,6 +619,8 @@ def translate(request: Request, body: TranslateBody) -> JSONResponse:
         "translation": result.translation,
         "mode": result.mode,
         "skipped": failures,
+        # 空数组表示「模型这次没有自作主张」；非空时界面要如实说明改了什么。
+        "corrections": corrections,
         "source_language": src,
         "target_language": "zh",
         "elapsed_ms": result.elapsed_ms,
