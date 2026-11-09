@@ -48,6 +48,9 @@ jobs:
       - name: TypeScript 类型检查（前端 + 主进程）
         run: npm run typecheck
 
+      - name: 构建主进程产物（生成 dist/shared，单测依赖它）
+        run: npm run build:main
+
       - name: 单元测试（22 套 Node 脚本，不启动 Electron）
         run: npm run test:unit
 
