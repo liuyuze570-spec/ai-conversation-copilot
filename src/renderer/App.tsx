@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { SourceBar } from './components/SourceBar';
 import { SubtitleList } from './components/SubtitleList';
@@ -6,6 +6,7 @@ import { LiveTranslateBar } from './components/LiveTranslateBar';
 import { FactPanel } from './components/FactPanel';
 import { ReplyPanel } from './components/ReplyPanel';
 import { QuickActions } from './components/QuickActions';
+import { ComposeStatus } from './components/ComposeStatus';
 import { CommCards } from './components/CommCards';
 import { SettingsPanel } from './components/SettingsPanel';
 import { RecordsPanel } from './components/RecordsPanel';
@@ -30,7 +31,6 @@ export default function App() {
     speak,
     clearConversation,
     closeReplies,
-    startListening,
     listenToSystemAudio,
     retryTranslate,
     reconnectAudio,
@@ -61,12 +61,23 @@ export default function App() {
    */
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
-  // Auto-start once settings are loaded and privacy has been accepted.
+  /**
+   * 0.6.3：不再「启动即自动采集」。
+   *
+   * 旧逻辑在 loaded && privacyAccepted && idle 时立刻 startListening，
+   * 用户一打开软件就开始监听，却不知道在听哪一路音源；对靠字幕获取信息
+   * 的目标使用者来说，先知道「它在听什么」比自动开录更重要。现在启动后
+   * 停在「未开始采集」，由用户在音源条上明确点「开始采集」，或先到
+   * 设置里选好音源用途再开始。保留 privacyAccepted 门（隐私说明必须先接受）。
+   */
+  const autoStartRef = useRef(false);
   useEffect(() => {
-    if (loaded && settings.privacyAccepted && status === 'idle') {
-      void startListening();
-    }
-  }, [loaded, settings.privacyAccepted, status, startListening]);
+    if (!loaded) return;
+    if (autoStartRef.current) return;
+    autoStartRef.current = true;
+    // 仅在「真实模式且首次启动」时不再自动开始；演示样例与打包自检走它们自己的入口。
+    // 明确停在未开始状态，等待用户主动选择音源与开始采集。
+  }, [loaded]);
 
   /*
    * 关闭窗口时补一次「冲洗」。
@@ -162,6 +173,13 @@ export default function App() {
         onClose={closeReplies}
       />
 
+      {/* 0.6.3：「中文 → 外语」的常驻状态条，收起更多/小窗口/大字号都可见。
+          只显示状态与重试，回复正文在 ReplyPanel。 */}
+      <ComposeStatus
+        onRetry={(chinese) => void requestReplies('from-chinese', { chinese })}
+        onClear={() => useUiStore.getState().resetCompose()}
+      />
+
       {settings.uiMode === 'compact' ? (
         <div className="border-t border-line-soft px-3 py-2.5">
           {settings.mockMode && (
@@ -221,7 +239,8 @@ export default function App() {
           scenario={scenarioMode}
           playback={playback}
           onAction={(mode) => void requestReplies(mode)}
-          onSubmit={(chinese) => void requestReplies('from-chinese', { chinese })}
+          onSubmit={(chinese) => requestReplies('from-chinese', { chinese })}
+          onRetry={(chinese) => requestReplies('from-chinese', { chinese })}
           onCloseReplies={closeReplies}
           onDemoLine={() => void window.copilot.audioDemoLine()}
           onSetScenario={(mode) => void setScenario(mode)}

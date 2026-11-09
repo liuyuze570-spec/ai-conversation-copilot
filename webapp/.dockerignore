@@ -2,9 +2,16 @@
 mt/node_modules
 server/.venv
 server/testdata
+# 本地反馈库不进镜像：运行时由 COPILOT_DATA_DIR / VOLUME 单独提供
+server/data
+# 测试 / 离线排查脚本不是运行时模块，Dockerfile 也不 COPY 它们
 server/_tts.py
+server/_tts_offline.py
 server/make_test_audio.py
-server/test_mt_onnx.py
+server/test_*.py
+server/offline_*.py
+server/compare_models.py
+server/run_offline.py
 server/.api.log
 server/.mt.log
 server/models/**/.cache
@@ -13,4 +20,9 @@ web/node_modules
 web/src
 **/__pycache__
 **/*.pyc
-deploy
+**/*.sqlite3
+# deploy 目录里只有 Dockerfile 需要参与构建；说明/脚本/compose 不进镜像。
+# 不要整目录排除 deploy —— 那会让 `-f deploy/Dockerfile` 读不到 Dockerfile。
+deploy/README.md
+deploy/*.py
+deploy/*.yml

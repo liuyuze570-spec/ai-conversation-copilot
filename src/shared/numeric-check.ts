@@ -139,6 +139,14 @@ export interface TimeHit {
   raw: string;
   start: number;
   end: number;
+  /**
+   * 字面没写明上午还是下午（ASR 常把 4:20 写成 `4.20` 又丢掉 am/pm）。
+   *
+   * 这种写法不能擅自 +12 当成下午，也不能硬说成「凌晨4点20分」去和译文
+   * 报冲突 —— 只能提醒使用者向对方确认。`scanNumbers` 仍然会用它占住 span，
+   * 免得 `4.20` 又被当成小数金额。
+   */
+  ambiguous?: boolean;
 }
 
 export interface DayHit {
@@ -284,14 +292,45 @@ function readArabicRun(text: string, start: number): { value: number; end: numbe
   return { value, end: i };
 }
 
+/**
+ * 英语口语数词 → 数值，只用于**时间点**（0–59）。
+ *
+ * `four twenty` 里的 twenty 是分钟、`oh five` 里的 five 是分钟 —— ASR 常把
+ * `4:20` 直接写成这两个词并丢掉冒号与 am/pm。只认 0–59 的封闭数词表；
+ * `hundred` / `thousand` 不在表里，读不出就返回 null，绝不猜一个时刻。
+ */
+function spokenNumberToValue(text: string): number | null {
+  let value = 0;
+  let seen = false;
+  for (const word of text.toLowerCase().split(/[\s-]+/)) {
+    if (!word) continue;
+    if (word === 'oh' || word === 'o') {
+      seen = true;
+      continue;
+    }
+    const n = EN_UNITS[word];
+    if (n === undefined) return null;
+    value += n; // twenty + five = 25
+    seen = true;
+  }
+  return seen ? value : null;
+}
+
+/** 「数词 数词 时段词」里的数词形态。 */
+const EN_CLOCK_WORD =
+  '(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[-\\s](?:one|two|three|four|five|six|seven|eight|nine))?';
+
 /** 时间点：英文 `3 p.m.` / `10.30am`，中文 `下午2时` / `14:30` / `上午十点`。 */
 export function scanTimes(text: string): { hits: TimeHit[]; spans: [number, number][] } {
   const hits: TimeHit[] = [];
   const spans: [number, number][] = [];
 
-  const push = (hour: number, minute: number, raw: string, start: number) => {
+  const push = (hour: number, minute: number, raw: string, start: number, ambiguous = false) => {
     if (hour > 24 || minute > 59) return;
-    hits.push({ hour, minute, raw, start, end: start + raw.length });
+    hits.push({
+      hour, minute, raw, start, end: start + raw.length,
+      ...(ambiguous ? { ambiguous: true } : {}),
+    });
     spans.push([start, start + raw.length]);
   };
 
@@ -304,6 +343,51 @@ export function scanTimes(text: string): { hits: TimeHit[]; spans: [number, numb
     let hour = Number(m[1]);
     const minute = m[2] ? Number(m[2]) : 0;
     const pm = /p/i.test(m[3]);
+    if (pm && hour < 12) hour += 12;
+    if (!pm && hour === 12) hour = 0;
+    push(hour, minute, m[0], m.index);
+  }
+
+  /*
+   * 1b) 英语口语拼写时间 + 时段词：`four twenty in the afternoon` /
+   *     `ten thirty a.m.` / `nine oh five at night`。
+   *
+   * ASR 常把 `4:20 p.m.` 写成「four twenty」并丢掉冒号与 am/pm，只留下
+   * afternoon 这类时段词。不认它，four / twenty 就会被 scanNumbers 当成两个
+   * 金额数（4 和 20），一致性检查凭空报「原文有 4、20，译文没有」；下午
+   * 4:20 也等于没读出来。这里整段占用 span，数值扫描器就不会再拆它，
+   * 并统一归一化成 24 小时制（16:20），与 `4:20 p.m.` / `16:20` 等价。
+   */
+  const spokenClock = new RegExp(
+    `\\b(${EN_CLOCK_WORD})\\s+((?:oh\\s+)?${EN_CLOCK_WORD})\\s+(?:(?:in\\s+the|at)\\s+)?(morning|afternoon|evening|night|a\\.?m\\.?|p\\.?m\\.?)(?![a-z])`,
+    'gi',
+  );
+  while ((m = spokenClock.exec(text))) {
+    const hour = spokenNumberToValue(m[1]);
+    const minute = spokenNumberToValue(m[2]);
+    if (hour == null || minute == null || hour < 1 || hour > 23 || minute > 59) continue;
+    if (spans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
+    const part = m[3].toLowerCase();
+    const pm = /^(afternoon|evening|night|p)/.test(part);
+    let h = hour;
+    if (pm && h < 12) h += 12;
+    if (!pm && h === 12) h = 0;
+    push(h, minute, m[0], m.index);
+  }
+
+  /*
+   * 1c) 数字时间 + 时段词：`4.20 in the afternoon` / `10:30 in the morning`。
+   *
+   * ASR 把 4:20 p.m. 的点号写法丢了 am/pm，只留 in the afternoon。没有时段词
+   * 的裸 `4.20` 绝不擅自 +12，交给规则 3 标 ambiguous（不写成「凌晨4点20分」）。
+   */
+  const clockWithPart = /(\d{1,2})(?:[:：.](\d{2}))\s+(?:(?:in\s+the|at)\s+)?(morning|afternoon|evening|night)\b/gi;
+  while ((m = clockWithPart.exec(text))) {
+    if (spans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
+    let hour = Number(m[1]);
+    const minute = m[2] ? Number(m[2]) : 0;
+    const part = m[3].toLowerCase();
+    const pm = part === 'afternoon' || part === 'evening' || part === 'night';
     if (pm && hour < 12) hour += 12;
     if (!pm && hour === 12) hour = 0;
     push(hour, minute, m[0], m.index);
@@ -330,13 +414,21 @@ export function scanTimes(text: string): { hits: TimeHit[]; spans: [number, numb
     push(hour, minute, m[0], m.index);
   }
 
-  // 3) 裸 24 小时制 `14:30` / `14.30`（兜底，先让带 am/pm 的写法拿走）
+  // 3) 裸 24 小时制 `14:30` / `14.30`（兜底，先让带 am/pm / 时段词的写法拿走）
   const hm = /(\d{1,2})[:：.](\d{2})(?!\d)/g;
+  const hasPartOfDay = /\b(?:a|p)\.?m\.?|morning|afternoon|evening|night|上午|下午|凌晨|晚上|中午/i.test(text);
   while ((m = hm.exec(text))) {
     if (spans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
     const hour = Number(m[1]);
     const minute = Number(m[2]);
-    if (hour <= 24 && minute <= 59) push(hour, minute, m[0], m.index);
+    /*
+     * 点号写法（ASR 常把 4:20 写成 4.20）没有任何时段词、且小时 ≤ 12 时，
+     * 无法确定是上午还是下午：标 ambiguous，不擅自 +12 当下午，也不硬写成
+     * 「凌晨4点20分」去和译文报冲突。> 12 的点号写法（14.30）是明确的 24
+     * 小时制，不标。span 仍会占住，免得 4.20 又被当成小数金额。
+     */
+    const ambiguous = m[0].includes('.') && !hasPartOfDay && hour <= 12;
+    if (hour <= 24 && minute <= 59) push(hour, minute, m[0], m.index, ambiguous);
   }
 
   return { hits, spans };
@@ -677,6 +769,8 @@ export function checkNumericConsistency(source: string, target: string): Numeric
   const negOk = srcNeg.length === tgtNeg.length;
 
   const parts: string[] = [];
+  const ambiguousTime =
+    srcTimes.hits.some((t) => t.ambiguous) || tgtTimes.hits.some((t) => t.ambiguous);
   for (const hit of numDiff.unsourced) {
     /*
      * 提示里只列「和它沾得上边」的原数：`745` 只列 seven / forty-five，
@@ -692,10 +786,18 @@ export function checkNumericConsistency(source: string, target: string): Numeric
     parts.push(`原文的「${hit.raw}」（${hit.value}）在译文里没出现`);
   }
   for (const hit of timeDiff.unsourced) {
-    parts.push(`译文时间「${hit.raw}」≠ 原文 ${srcTimes.hits.map((t) => t.raw).join(' / ') || '（无时间）'}`);
+    if (ambiguousTime) {
+      parts.push(`译文时间「${hit.raw}」对应的原文字面没写明上午还是下午，请向对方确认是几点`);
+    } else {
+      parts.push(`译文时间「${hit.raw}」≠ 原文 ${srcTimes.hits.map((t) => t.raw).join(' / ') || '（无时间）'}`);
+    }
   }
   for (const hit of timeDiff.missing) {
-    parts.push(`原文时间「${hit.raw}」（${zhTime(hit.hour, hit.minute)}）在译文里没出现`);
+    if (ambiguousTime) {
+      parts.push(`原文时间「${hit.raw}」没写明上午还是下午，请向对方确认是几点`);
+    } else {
+      parts.push(`原文时间「${hit.raw}」（${zhTime(hit.hour, hit.minute)}）在译文里没出现`);
+    }
   }
   for (const hit of dayDiff.unsourced) {
     parts.push(`译文「${hit.raw}」在原文里没有对应日期`);
@@ -708,6 +810,13 @@ export function checkNumericConsistency(source: string, target: string): Numeric
   }
   for (const dir of dirExtra) {
     parts.push(`译文说「${DIRECTION_LABEL[dir]}」，但原文没有这个方向`);
+  }
+  /*
+   * 只要有一侧的时间写法没写上午/下午，就必须给出澄清提示，而不是断言
+   * 「凌晨4点20分 ≠ 下午4点20分」这种硬冲突。无法确定时不去补时间。
+   */
+  if (ambiguousTime && !parts.some((p) => p.includes('上午还是下午'))) {
+    parts.push('有时间点没写明上午还是下午，请向对方确认，不要自己猜');
   }
 
   return {

@@ -1,0 +1,21 @@
+# 最小部署配置：单服务 + 命名卷承载反馈库。
+# 构建上下文是 webapp/，与 deploy/README.md 里的 docker build 命令一致。
+services:
+  copilot-web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: copilot-web:0.7.0-web.10
+    environment:
+      # 反馈库落在命名卷里；重新部署不会覆盖卷内数据。
+      # 注意：是否真能跨部署保留，取决于平台是否给这个卷持久存储（见 deploy/README.md）。
+      COPILOT_DATA_DIR: /app/data
+    volumes:
+      - copilot-feedback:/app/data
+    ports:
+      - "8000:8000"
+    # HEALTHCHECK 已在 Dockerfile 里声明，这里不重复。
+    restart: unless-stopped
+
+volumes:
+  copilot-feedback:

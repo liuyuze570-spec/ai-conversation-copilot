@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useSettingsStore } from '../stores/settings';
+import { useUiStore } from '../stores/ui';
 import { TONE_LABELS, TONE_ORDER } from '../../services/tone';
 import { SCENARIO_MODES, type ScenarioMode, type ToneKey } from '../../shared/types';
 import { CommCards } from './CommCards';
@@ -12,7 +13,10 @@ interface Props {
   hasSuggestions: boolean;
   scenario: ScenarioMode;
   playback: 'playing' | 'paused';
-  onSubmit: (chinese: string) => void;
+  /** 返回是否真的生成成功；失败/超时返回 false，组件据此保留草稿。 */
+  onSubmit: (chinese: string) => Promise<boolean>;
+  /** 失败后按原草稿重试一次，同样返回是否成功。 */
+  onRetry: (chinese: string) => Promise<boolean>;
   onAction: (mode: CopilotMode) => void;
   onCloseReplies: () => void;
   onDemoLine: () => void;
@@ -47,6 +51,7 @@ export function QuickActions({
   scenario,
   playback,
   onSubmit,
+  onRetry,
   onAction,
   onCloseReplies,
   onDemoLine,
@@ -56,9 +61,17 @@ export function QuickActions({
   onListenSystem,
   onSpeak,
 }: Props) {
-  const [value, setValue] = useState('');
   const [more, setMore] = useState(false);
   const [showSamples, setShowSamples] = useState(false);
+  /*
+   * 0.6.3：草稿放进全局 store，不再用组件本地 state。
+   * 这样「更多」收起再展开、切到紧凑模式、放大字号导致组件重排，
+   * 用户输入的中文都不会丢；失败时也能从同一份草稿重试。
+   */
+  const compose = useUiStore((state) => state.compose);
+  const setCompose = useUiStore((state) => state.setCompose);
+  const value = compose.draft;
+  const setValue = (next: string) => setCompose({ draft: next });
   const tone = useSettingsStore((state) => state.settings.tone);
   const mockMode = useSettingsStore((state) => state.settings.mockMode);
   const demoAutoPlay = useSettingsStore((state) => state.settings.demoAutoPlay);
@@ -75,6 +88,26 @@ export function QuickActions({
    * 一样会把字幕区撑满，只看译文会漏掉。
    */
   const compact = needsCompactChrome(maxFontSize(subtitle));
+
+  /*
+   * 提交只发请求，不清输入框。成功才清空，失败/超时保留草稿并显示重试。
+   * 等待期间不允许重复提交（busy 计数由 hook 管，这里再加一道本地闸门）。
+   */
+  const [submitting, setSubmitting] = useState(false);
+  const run = (text: string, call: (s: string) => Promise<boolean>) => {
+    const clean = text.trim();
+    if (submitting || !clean) return;
+    setSubmitting(true);
+    setCompose({ draft: clean, submitted: clean, phase: 'pending', error: '' });
+    void call(clean)
+      .then((ok) => {
+        // 只清草稿，不动 submitted：失败重试仍能拿到原句。
+        if (ok) useUiStore.getState().setCompose({ draft: '', phase: 'success' });
+      })
+      .finally(() => setSubmitting(false));
+  };
+  const submit = (text: string) => run(text, onSubmit);
+  const retry = () => run(compose.submitted || compose.draft, onRetry);
 
   const setTone = (next: ToneKey) => void update({ tone: next });
   const active = SCENARIO_MODES.find((mode) => mode.value === scenario);
@@ -240,29 +273,26 @@ export function QuickActions({
             value={value}
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && value.trim()) {
-                onSubmit(value.trim());
-                setValue('');
-              }
+              if (event.key === 'Enter' && value.trim()) submit(value);
             }}
+            disabled={submitting}
             aria-label="输入你想让对方听到的中文，按回车转成外语"
+            aria-describedby="compose-status"
             placeholder="输入你想说的中文……"
             className="no-drag min-w-0 flex-1 rounded-xl border border-line-soft bg-ink-850 px-2.5 py-2
               text-[12px] text-white/90 placeholder:text-white/25 transition-colors duration-150
-              focus:border-accent/45 focus:outline-none"
+              focus:border-accent/45 focus:outline-none disabled:opacity-60"
           />
           <button
             type="button"
-            disabled={disabled || !value.trim()}
-            onClick={() => {
-              onSubmit(value.trim());
-              setValue('');
-            }}
+            data-chinese-submit
+            disabled={disabled || submitting || !value.trim()}
+            onClick={() => submit(value)}
             className="no-drag shrink-0 rounded-xl border border-line px-2.5 py-2 text-[12px]
               text-white/65 transition-colors duration-150 hover:bg-ink-800 hover:text-white
               disabled:opacity-30"
           >
-            转成外语
+            {submitting ? '生成中…' : '转成外语'}
           </button>
         </div>
 

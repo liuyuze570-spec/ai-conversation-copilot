@@ -71,6 +71,9 @@ docker run --rm -p 8000:8000 copilot-web:0.7.0-web.1
 | `COPILOT_ALLOW_ORIGINS` | 未设 | 只有显式配了才开 CORS；不配则同源 |
 | `COPILOT_QUOTA_TRANSLATE` / `_TRANSCRIBE` | 40 / 10 | 每个访客会话的配额 |
 | `COPILOT_MAX_CHARS` / `_MAX_AUDIO_MB` / `_MAX_AUDIO_SECONDS` | 2000 / 8 / 60 | 输入上限 |
+| `COPILOT_DATA_DIR` | `server/data`（Docker 镜像为 `/app/data`） | 反馈 SQLite 库目录；部署时须指向平台持久卷 |
+| `COPILOT_FEEDBACK_RATE_PER_MIN` | 5 | 每个会话 / 来源每分钟最多提交的反馈数 |
+| `COPILOT_FEEDBACK_MAX_BODY_BYTES` | 65536 | 反馈请求体字节上限 |
 
 默认配置**不需要任何 Key 就能跑通翻译和识别**，这是当前唯一实测过的真实路径。
 
@@ -118,3 +121,35 @@ docker run --rm -p 8000:8000 copilot-web:0.7.0-web.1
 - 只有同源部署实测过；跨域要显式配 `COPILOT_ALLOW_ORIGINS`。
 - 只测过 Chrome（桌面 1280 宽、手机 390 宽）。Safari 的 `audio/mp4` 未验证。
 - 麦克风真机授权在 HTTPS 下才成立；`http://` 或非 localhost 会被浏览器直接拒。
+
+---
+
+## 8. 反馈查询凭证与反馈库持久化（2026-11-09 加固）
+
+**查询凭证不再放在 URL 里（旧方式已废弃）**：前端 `queryFeedback` 改用
+`X-Feedback-Token` 请求头传递一次性凭证。后端仍保留
+`GET /api/feedback/{ticket}?token=...` 作**短期兼容**，但该方式 **DEPRECATED**：
+URL 会进浏览器历史、反向代理与访问日志，把一次性凭证写到这些地方等于泄露，
+后续版本会移除。部署入口同时关闭了 Uvicorn 默认 `access_log`
+（`Dockerfile` 的 CMD 加 `--no-access-log`，源码 `server/run.py` 设
+`access_log=False`），确保即便有人仍用旧 URL 也不会把带凭据的 URL 落进日志。
+> 发布副本 `F:/copilot-deploy/app/run.py` 本轮未改动；下次重新发布时请用
+> `webapp/server/run.py` 覆盖发布根的 run.py。
+
+**反馈库目录可配置**：`COPILOT_DATA_DIR`（默认 `server/data`，Docker 镜像内为
+`/app/data`）。`Dockerfile` 声明了 `VOLUME ["/app/data"]`，`docker-compose.yml`
+挂了命名卷 `copilot-feedback`。
+
+**发布前备份 / 发布后恢复**：`deploy/backup_restore_feedback.py`，纯文件复制 +
+sha256 校验，不连线上数据库。
+
+> **需平台持久目录或外置 DB 才能真正跨部署**：平台是否有持久卷未知。若
+> `COPILOT_DATA_DIR` 指向随发布被覆盖的临时目录，备份文件必须保存在发布流程
+> 之外、并把 restore 接进发布流程才有意义；只把库文件复制进镜像 / 发布目录，
+> 下一次发布仍会覆盖它。要真正跨部署不丢数据，须由平台提供持久目录并挂载，
+> 或改用外置数据库。脚本的 docstring 里也写明了这一点，**不拿本地文件复制
+> 冒充线上已验证**。
+
+**反馈提交限流**：`/api/feedback` 现在按「已验证会话 / 来源 IP」哈希独立限流
+（`COPILOT_FEEDBACK_RATE_PER_MIN`），并校验请求体字节上限
+（`COPILOT_FEEDBACK_MAX_BODY_BYTES`）；持久库不可用时明确返回 503，不伪造回执。

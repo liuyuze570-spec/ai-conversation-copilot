@@ -39,6 +39,12 @@ export interface PlannedReply {
   segments: ReplySegment[];
   /** 为什么给这一条 —— 让用户知道它对应哪一条事实。 */
   why: string;
+  /**
+   * 这批回复是由哪一份「原文 + 事实」算出来的（见 `replyFingerprint`）。
+   * 原文或事实一改，这个键就变；缓存/展示层据此把旧回复判为失效，
+   * 不能让用户照着一句已经作废的确认句去说。
+   */
+  sourceKey?: string;
 }
 
 /** 回复生成用到的最小事实形状。 */
@@ -163,17 +169,22 @@ const CJK = /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/;
 function englishAmount(fact: ReplyFact): string {
   const source = (fact.sourceText ?? '').trim();
   const shown = (fact.value ?? '').trim();
+  /*
+   * 原话侧已经是英文写法（`450 euros` / `three hundred euros` / `$450`）：
+   * 照抄，保留对方自己的说法。拼写金额（`three hundred euros`）一个阿拉伯
+   * 数字都没有，所以这一步必须放在「抽数字」之前 —— 否则 digits 为空会
+   * 直接返回空串，确认句里那笔钱就整条消失，两笔金额被混成一句泛泛的话。
+   */
+  if (source && !CJK.test(source) && /[a-zA-Z$€£¥]/.test(source)) {
+    const cleaned = source.replace(/[,，]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!CJK.test(cleaned)) return cleaned;
+  }
+
   const digits =
     source.match(/\d[\d,]*(?:\.\d+)?/)?.[0] ??
     shown.match(/\d[\d,]*(?:\.\d+)?/)?.[0] ??
     '';
   if (!digits) return '';
-
-  // 原话侧已经是英文写法（450 euros / $450）：照抄，保留对方自己的说法。
-  if (source && !CJK.test(source) && /[a-zA-Z$€£¥]/.test(source)) {
-    const cleaned = source.replace(/[,，]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!CJK.test(cleaned)) return cleaned;
-  }
 
   const spoken = CURRENCY_SPOKEN[fact.currency ?? ''] ?? '';
   return spoken ? `${digits} ${spoken}` : digits;
@@ -399,6 +410,35 @@ export function contentReplies(
   ];
 }
 
+/** 回复生成算法的版本号（与 `HINT_VERSION` 同一用途：换算法后旧结果失效）。 */
+export const REPLY_VERSION = 1;
+
+/**
+ * 回复卡的输入指纹。
+ *
+ * 回复是按「当前原文 + 当前事实」算出来的：原文或事实一改，旧回复就必须
+ * 失效，不能继续挂在界面上（用户会照着一句已经作废的确认句去说）。这里把
+ * 参与生成的内容拼成一个稳定键，前面带上算法版本 —— 与近音提示的
+ * `HINT_VERSION` / 片段 id 是同一道闸门的两端。纯函数，不碰 DOM、不碰网络。
+ */
+export function replyFingerprint(input: ReplyPlanInput): string {
+  const facts = (input.facts ?? [])
+    .map((fact) =>
+      [
+        fact.kind ?? '',
+        fact.value ?? '',
+        fact.sourceText ?? '',
+        fact.negated ? 'neg' : '',
+        fact.currency ?? '',
+        fact.role ?? '',
+        fact.label ?? '',
+        fact.labelEn ?? '',
+      ].join('~'),
+    )
+    .join('|');
+  return `${REPLY_VERSION}\u0000${input.sourceLanguage ?? 'en'}\u0000${input.original ?? ''}\u0000${facts}`;
+}
+
 /**
  * 生成最多三条回复。
  *
@@ -406,6 +446,7 @@ export function contentReplies(
  * 先确认听到的内容，再问不清的地方，最后收尾。三条都会出现，但内容随事实变。
  */
 export function planReplies(input: ReplyPlanInput, phon: (text: string) => string): PlannedReply[] {
+  const sourceKey = replyFingerprint(input);
   const facts = (input.facts ?? []).filter((fact) => fact.value && !fact.negated);
   const money = facts.filter((fact) => fact.kind === 'money');
   const origin = facts.find((fact) => fact.role === 'origin');
@@ -507,7 +548,7 @@ export function planReplies(input: ReplyPlanInput, phon: (text: string) => strin
     for (const item of contentReplies(scene, context)) {
       out.push(makeReply(item, phon));
     }
-    return out.slice(0, 3);
+    return out.slice(0, 3).map((card) => ({ ...card, sourceKey }));
   }
 
   // ---- 2. 澄清 ---------------------------------------------------------- //
@@ -541,19 +582,28 @@ export function planReplies(input: ReplyPlanInput, phon: (text: string) => strin
         ),
       );
     } else if (negated) {
-      out.push(
-        makeReply(
-          {
-            id: 'clarify-negation',
-            kind: 'clarify',
-            purpose: '请对方确认被否定的那个值',
-            en: `Sorry, so it's not ${negated.sourceText || negated.value}, right?`,
-            zh: `不好意思，所以不是${zhValue(negated.value)}，对吗？`,
-            why: '这句话里有被否定的信息，确认一次比记错强',
-          },
-          phon,
-        ),
-      );
+      const raw = (negated.sourceText || negated.value || '').trim();
+      /*
+       * 中文展示值（`540欧元`）不能直接拼进英文句，对方看不懂。转成等价的
+       * 英语说法（数字 + 原话里读到的币种）；推不出就干脆不给这张卡，
+       * 绝不拿中文顶替，也不擅自补币种。
+       */
+      const negatedEn = CJK.test(raw) ? englishAmount(negated) : raw;
+      if (negatedEn) {
+        out.push(
+          makeReply(
+            {
+              id: 'clarify-negation',
+              kind: 'clarify',
+              purpose: '请对方确认被否定的那个值',
+              en: `Sorry, so it's not ${negatedEn}, right?`,
+              zh: `不好意思，所以不是${zhValue(negated.value)}，对吗？`,
+              why: '这句话里有被否定的信息，确认一次比记错强',
+            },
+            phon,
+          ),
+        );
+      }
     }
     if (out.length < 3) {
       out.push(
@@ -656,7 +706,7 @@ export function planReplies(input: ReplyPlanInput, phon: (text: string) => strin
     );
   }
 
-  return out.slice(0, 3);
+  return out.slice(0, 3).map((card) => ({ ...card, sourceKey }));
 }
 
 /** 卡片上「这一条从哪来」的诚实标注。 */

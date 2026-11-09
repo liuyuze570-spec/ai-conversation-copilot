@@ -216,6 +216,10 @@ export function certaintyOf(text: string): FactCertainty {
  * 中文的「三点」只在译文里出现，所以两个字段都要扫 —— 但记下是从哪个字段
  * 取到的，界面上才能说清「这句原话」到底在哪一行。
  */
+/** 「数词 数词 时段词」里的单个英语数词形态（只认 0–99 的封闭词表）。 */
+const EN_SPOKEN_TIME_WORD =
+  '(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[-\\s](?:one|two|three|four|five|six|seven|eight|nine))?';
+
 const TIME_PATTERNS: RegExp[] = [
   /\b\d{1,2}[:：]\d{2}\b/g,
   // 「3 p.m.」「10:30 a.m.」带点的那种写法：只写 am|pm 会漏掉一多半英文口语转写。
@@ -229,6 +233,15 @@ const TIME_PATTERNS: RegExp[] = [
   /(?:上午|下午|早上|晚上|中午|凌晨)?[一二三四五六七八九十两\d]{1,3}点(?:半|[一二三四五六七八九十\d]{1,2}分)?/g,
   /\b\d{1,2}時(?:半|\d{1,2}分)?/g,
   /\b\d{1,2}시(?:\s*\d{1,2}분)?/g,
+  /*
+   * 英语口语拼写时间 + 时段词：`four twenty in the afternoon`。
+   * ASR 把 4:20 p.m. 写成这样并丢掉冒号与 am/pm；不认它整句时间事实就空了，
+   * 点号写法 `4.20` 还会漏进裸金额（timeSpans 划不进那一段）。必须带时段词
+   * 才认 —— 没有时段词不猜上午还是下午，符合「不得擅自补时间」。
+   */
+  new RegExp(`\\b${EN_SPOKEN_TIME_WORD}\\s+(?:oh\\s+)?${EN_SPOKEN_TIME_WORD}\\s+(?:in\\s+the\\s+)?(?:morning|afternoon|evening|night)\\b`, 'gi'),
+  // 数字时间 + 时段词：`4.20 in the afternoon` / `10:30 in the morning`。
+  /\b\d{1,2}(?:[:：.]\d{2})\s+(?:in\s+the\s+)?(?:morning|afternoon|evening|night)\b/gi,
 ];
 
 /**
@@ -478,8 +491,16 @@ function rescheduleRoles(text: string, values: string[]): Map<string, FactRole> 
  */
 function moneyLabels(text: string): Map<string, string> {
   const out = new Map<string, string>();
-  const pattern =
-    /\b([A-Za-z][A-Za-z' -]{0,28}?)\s+(?:is|are|was|were|=)\s+(?:about\s+|around\s+)?\$?(\d[\d,]*(?:\.\d+)?)/gi;
+  /*
+   * 金额不只有阿拉伯数字：`The deposit is three hundred euros.` 里一个数字
+   * 都没有。只认 `\d` 的话两笔钱都拿不到 label，确认句只能写成
+   * 「300 和 900」—— 对方根本不知道你在确认哪笔钱。这里复用封闭数词表，
+   * 再用 numericKeyOf 把「three hundred / 300」归一成同一个键去配 label。
+   */
+  const pattern = new RegExp(
+    `\\b([A-Za-z][A-Za-z' -]{0,28}?)\\s+(?:is|are|was|were|=)\\s+(?:about\\s+|around\\s+)?\\$?(\\d[\\d,]*(?:\\.\\d+)?|${EN_SPOKEN_TIME_WORD}\\s+(?:hundred|thousand|million)(?:\\s+${EN_SPOKEN_TIME_WORD})?)`,
+    'gi',
+  );
   for (const match of text.matchAll(pattern)) {
     const label = match[1]
       .trim()
@@ -488,8 +509,8 @@ function moneyLabels(text: string): Map<string, string> {
       .replace(/^(?:and|or|then)\s+/, '')
       .replace(/^(?:the|a|an|its|their|your|our|my)\s+/, '');
     if (!label || label.split(/\s+/).length > 4) continue;
-    const value = Number(match[2].replace(/,/g, ''));
-    if (!Number.isFinite(value)) continue;
+    const value = numericKeyOf(match[2]);
+    if (value == null) continue;
     out.set(String(value), label);
   }
   return out;
@@ -1441,6 +1462,39 @@ function planRescheduleSentence(
   return { ok: true, sentence, meaning, blocked: [] };
 }
 
+/** 币种代码 → 英语口语词（只用于把中文展示值转回对方听得懂的说法）。 */
+const CURRENCY_EN: Record<string, string> = {
+  USD: 'dollars', EUR: 'euros', JPY: 'yen', CNY: 'yuan', GBP: 'pounds',
+};
+const WEEKDAY_EN = [
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+];
+
+/**
+ * 把中文展示值转回英语说法，只做**封闭集合的等价转写**。
+ *
+ * 中文原话（`请确认定金是450欧元`）提取出来的值里带汉字，直接拼进英文确认句
+ * 就成了 `the deposit is 450欧元` —— 对方看不懂，近音行也会跟着错。这里只
+ * 处理「数字 + 币种」和「星期」两类：数字与币种都从原话读，读不到币种就只给
+ * 数字；转不出（自由文本、地点、事项）返回 null，由调用方 block，绝不硬造
+ * 英文，也绝不擅自补币种或时间。
+ */
+function englishSpokenValue(fact: ConfirmInput): string | null {
+  const raw = (fact.value ?? '').trim();
+  const src = (fact.sourceText ?? '').trim();
+  const digits =
+    src.match(/\d[\d,]*(?:\.\d+)?/)?.[0] ??
+    raw.match(/\d[\d,]*(?:\.\d+)?/)?.[0] ??
+    '';
+  if (digits) {
+    const code = currencyOf(`${raw} ${src}`);
+    return code ? `${digits} ${CURRENCY_EN[code]}` : digits;
+  }
+  const days = weekdaysIn(raw);
+  if (days.length === 1) return WEEKDAY_EN[days[0]] ?? null;
+  return null;
+}
+
 /**
  * 生成确认句的完整计划：句子、释义、以及「哪几条卡住了、为什么」。
  *
@@ -1537,7 +1591,27 @@ export function planConfirmSentence(
       });
       continue;
     }
-    if (!spoken.includes(derived.text)) spoken.push(derived.text);
+    let spokenText = derived.text;
+    /*
+     * 目标语言是英语、原话/当前值却是中文展示值（`450欧元`、`周五`）时，
+     * 不能把中文直接拼进英文确认句。只做封闭集合的等价转写；推不出就整条
+     * block，不拿中文顶替，也不擅自补币种或时间。
+     */
+    if (targetLanguage === 'English' && /[\u3400-\u9fff]/.test(spokenText)) {
+      const converted = englishSpokenValue(fact);
+      if (!converted) {
+        blocked.push({
+          id: fact.id ?? '',
+          kind: fact.kind ?? '',
+          value: fact.value,
+          sourceText: fact.sourceText,
+          reason: 'derive',
+        });
+        continue;
+      }
+      spokenText = converted;
+    }
+    if (!spoken.includes(spokenText)) spoken.push(spokenText);
     const raw = fact.value.trim();
     /*
      * 只在「值里带英文字母」时才口语化：`twelve thousand` / `3 p.m.` /

@@ -4,6 +4,12 @@ import { useUiStore } from '../stores/ui';
 import { resolveSources, sourceModeLabel } from '../../shared/sources';
 import { audioUiState } from '../../shared/audio-state';
 import {
+  captureButtonLabel,
+  captureButtonAria,
+  capturePhase,
+  isCaptureActive,
+} from '../../shared/capture-state';
+import {
   FONT_MAX,
   FONT_MIN,
   FONT_TARGETS,
@@ -41,6 +47,7 @@ export function SourceBar({
   const update = useSettingsStore((state) => state.update);
   const status = useUiStore((state) => state.status);
   const statusMessage = useUiStore((state) => state.statusMessage);
+  const busy = useUiStore((state) => state.busy);
   const level = useUiStore((state) => state.level);
   const heardAt = useUiStore((state) => state.heardAt);
 
@@ -124,7 +131,16 @@ export function SourceBar({
     setFont(fontSizeOf(next, target));
   };
 
-  const running = status === 'listening' || status === 'starting' || status === 'no-audio';
+  /*
+   * 0.6.3：不再自己写一份 running 清单。
+   * 以前这里把 no-audio 算「在跑」，按钮显示「暂停」，而 toggleListening
+   * 却把 no-audio 当成「没在跑」，点下去反而重新 startListening ——
+   * 界面说暂停、实际没停。现在按钮文字、标题栏、快捷键全部只读
+   * shared/capture-state.ts 这一个判据。
+   */
+  const running = isCaptureActive(status);
+  const phase = capturePhase(status, running && busy);
+  const buttonLabel = captureButtonLabel(status);
 
   /*
    * 电平读数。
@@ -141,6 +157,8 @@ export function SourceBar({
       data-source-bar
       data-audio-db={db.toFixed(0)}
       data-audio-live={hasSignal ? 'true' : 'false'}
+      data-capture-phase={phase}
+      data-capture-active={running ? 'true' : 'false'}
       className="relative shrink-0 border-b border-line-soft bg-ink-900/70 px-3 py-2"
     >
       <div className="flex items-center gap-2">
@@ -186,19 +204,41 @@ export function SourceBar({
         {ui.detail}
       </p>
 
+      {/*
+        * 「处理中」是独立于采集的第七个状态：采集还在跑，但翻译/回复正在算。
+        * 用 aria-live 播报一次，不跟着字幕流逐句播，避免读屏被淹没。
+        */}
+      {phase === 'processing' && (
+        <p
+          data-processing-status
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="mt-0.5 text-[10px] font-medium text-accent-soft"
+        >
+          采集中 · 正在处理上一句（不会自动停止采集）
+        </p>
+      )}
+
       <div className="mt-1.5 flex items-center gap-1.5">
+        {/*
+          * 0.6.3 主按钮：文字直接说「开始采集 / 停止采集」，不再用「暂停」。
+          * 旧版在「采集中，暂未收到声音」时显示「暂停」，点了却不停止，
+          * 是本次修复的核心缺陷（见 shared/capture-state.ts）。
+          */}
         <button
           type="button"
           data-listen-toggle
+          data-capture-action={running ? 'stop' : 'start'}
           onClick={onToggleListening}
-          aria-label={running ? '暂停采集音频' : '开始采集音频'}
-          className={`no-drag rounded-lg px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${
+          aria-label={captureButtonAria(status)}
+          className={`no-drag shrink-0 rounded-lg px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${
             running
-              ? 'border border-line bg-ink-800 text-white/85 hover:bg-ink-700'
+              ? 'border border-danger/45 bg-danger/10 text-danger hover:bg-danger/20'
               : 'bg-accent text-white hover:bg-accent-dim'
           }`}
         >
-          {running ? '暂停' : '开始'}
+          {buttonLabel}
         </button>
 
         <span className="mx-0.5 h-3.5 w-px bg-line-soft" aria-hidden />

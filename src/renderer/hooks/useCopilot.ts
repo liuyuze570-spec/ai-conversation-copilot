@@ -5,11 +5,26 @@ import { useUiStore } from '../stores/ui';
 import { useLatencyStore } from '../stores/latency';
 import { useFactsStore } from '../stores/facts';
 import type { ReplyDraft } from '../../services/types';
-import type { ConversationItem, ReplySuggestion, ScenarioMode } from '../../shared/types';
+import type {
+  ConversationItem,
+  ListeningStatus,
+  ReplySuggestion,
+  ScenarioMode,
+} from '../../shared/types';
 import { extractFactsWithRules, factsForConfirm, type FactItem } from '../../shared/facts';
 import { LANGUAGE_TAGS } from '../../shared/types';
 import { levelFor } from '../../shared/levels';
 import { canWatchForPause } from '../../shared/audio-status';
+import {
+  acceptsTranscript,
+  captureAction,
+  closeCaptureGate,
+  gateAfterSessionReset,
+  initialCaptureGate,
+  isCaptureActive,
+  openCaptureGate,
+  type CaptureGate,
+} from '../../shared/capture-state';
 import { registerSessionReset } from '../lib/session-reset';
 import { HINT_VERSION, buildHintPlan } from '../../services/pronunciation';
 import { bcp47For, type HintSystem } from '../../shared/languages';
@@ -30,6 +45,14 @@ export type CopilotMode =
 
 /** How long a partial line must stay unchanged before we translate it live. */
 const LIVE_TRANSLATE_DEBOUNCE_MS = 700;
+
+/**
+ * 0.6.3：界面这一侧的回复超时。
+ * 主进程 LLM 单次 45s、失败还会重试，最坏能等两分钟以上；用户实测
+ * 「输入中文后等了两分钟没反应，输入框却已经清空」。这里给一个可感知的
+ * 上限，超时就 abort 主进程请求、保留草稿、明确报错并可一键重试。
+ */
+const REPLY_TIMEOUT_MS = 45_000;
 
 /**
  * 一轮监听里最多为「事实卡」问模型多少次。
@@ -122,6 +145,13 @@ export function useCopilot() {
    * 那是上一场对话的内容。
    */
   const lastSessionRef = useRef(0);
+  /**
+   * 0.6.3 会话闸门：停止时**同步**关闸，不等 audioStop 的 await 回来。
+   * 主进程已经按 sessionId / engineGeneration 挡过一次，但「停止瞬间已经
+   * 排在 IPC 队列里」「超时才回来的识别」「切换会话后旧回包」这三类会穿过
+   * 那层过滤；渲染层再挡一道，保证新会话里不会出现上一场字幕。
+   */
+  const captureGateRef = useRef<CaptureGate>(initialCaptureGate());
 
   /** Pending debounce for translating the line that is still being spoken. */
   const partialTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -473,6 +503,14 @@ export function useCopilot() {
    * 容易让人以为「它记错了」的一类错。
    */
   const clearConversation = useCallback(() => {
+    /*
+     * 0.6.3：切会话也要抬闸门。只清字幕不够 —— 上一场已经排进 IPC 队列的
+     * 字幕、超时才回来的识别，会在清场之后又写进新会话。
+     */
+    captureGateRef.current = gateAfterSessionReset(
+      captureGateRef.current,
+      lastSessionRef.current,
+    );
     const pendingTranslate = [...translateReqRef.current.entries()];
     translateReqRef.current.clear();
     for (const [id, requestId] of pendingTranslate) {
@@ -487,6 +525,12 @@ export function useCopilot() {
     replySeqRef.current += 1;
     repliesPendingRef.current = 0;
     setBusy(false);
+    if (useUiStore.getState().compose.phase === 'pending') {
+      useUiStore.getState().setCompose({
+        phase: 'error',
+        error: '已切换会话，这次生成被取消。草稿已保留，可点「重试」。',
+      });
+    }
     useFactsStore.getState().clear();
     clearConversationStore();
     useUiStore.getState().setSuggestions([]);
@@ -533,6 +577,15 @@ export function useCopilot() {
   // ---- transcript pipeline ---------------------------------------------
   useEffect(() => {
     const offTranscript = window.copilot.onTranscript((payload) => {
+      /*
+       * 0.6.3：闸门关着（用户已点停止 / 切过会话）就一律不写。
+       * 必须放在 sessionId 更新**之前**：旧回包如果先把 lastSessionRef
+       * 顶上去，下一次新会话的合法字幕反而会被误判成过时。
+       */
+      if (!acceptsTranscript(captureGateRef.current, payload.sessionId)) {
+        window.copilot.log('INFO', 'Renderer', 'drop transcript: capture gate closed');
+        return;
+      }
       /*
        * 会话编号：只在「同一个场次」里认字幕。
        *
@@ -635,6 +688,18 @@ export function useCopilot() {
     });
 
     const offStatus = window.copilot.onAudioStatus((payload) => {
+      /*
+       * 0.6.3：停止之后迟到的「正在采集」回包不许把状态改回去。
+       * 主进程 stopAudioPipeline 会推进 engineGeneration 并丢弃在途上报，
+       * 但 IPC 队列里已经排好的那条仍会到渲染层；这里按闸门再挡一道。
+       */
+      if (
+        !captureGateRef.current.active &&
+        isCaptureActive(payload.status as ListeningStatus)
+      ) {
+        window.copilot.log('INFO', 'Renderer', 'drop stale audio status after stop');
+        return;
+      }
       setStatus(payload.status as never, payload.message ?? '');
     });
 
@@ -693,6 +758,9 @@ export function useCopilot() {
 
   const startListening = useCallback(async () => {
     const epoch = (audioEpochRef.current += 1);
+    // 0.6.3：开闸放在最前面（同步）。启动请求发出去后随时可能来字幕，
+    // 等 await 回来再开闸会丢掉开场的那一两句。
+    captureGateRef.current = openCaptureGate(captureGateRef.current);
     setError(null);
     setLevel(null);
     /*
@@ -777,6 +845,17 @@ export function useCopilot() {
   }, [setError, setLevel, setStatus]);
 
   const stopListening = useCallback(async () => {
+    /*
+     * 0.6.3：关闸必须在**任何 await 之前**同步完成。
+     * 先关闸再 audioStop，则「停止瞬间已排在 IPC 队列」「设备关闭过程中
+     * 才回来的识别」「超时回包」全部会被 onTranscript 拒掉，不会写进
+     * 当前（或下一次新建的）会话。重复点停止也只会多推进一次代次，
+     * 不会重新开闸。
+     */
+    captureGateRef.current = closeCaptureGate(
+      captureGateRef.current,
+      lastSessionRef.current,
+    );
     // 代次 +1：任何还在等回执的启动请求就此作废，迟到的结果不许再改状态。
     audioEpochRef.current += 1;
     await window.copilot.audioStop();
@@ -789,6 +868,17 @@ export function useCopilot() {
     replySeqRef.current += 1;
     repliesPendingRef.current = 0;
     setBusy(false);
+    /*
+     * 停止会作废在途的回复请求，那条请求再也不会走到 success/error 分支。
+     * 如果它正是「中文 → 外语」，界面会永远停在「处理中」—— 这里补终态，
+     * 草稿仍然保留，用户可以直接点重试。
+     */
+    if (useUiStore.getState().compose.phase === 'pending') {
+      useUiStore.getState().setCompose({
+        phase: 'error',
+        error: '已停止采集，这次生成被取消。草稿已保留，可点「重试」。',
+      });
+    }
     /*
      * 把还在飞的翻译、回复、朗读全部取消掉。
      *
@@ -823,11 +913,12 @@ export function useCopilot() {
   const toggleListening = useCallback(async () => {
     const current = useUiStore.getState().status;
     /*
-     * `starting` 也算「在听」：点了开始、正在连设备时再点一次，用户的意图
-     * 显然是取消，而不是再排一次启动。旧实现只认 `listening`，于是这一秒里
-     * 点按钮会再发一次启动请求。
+     * 0.6.3：只用共享判据。旧版自己写 `listening || starting`，漏了
+     * `no-audio` —— 「采集中，暂未收到声音」时点按钮显示「暂停」，
+     * 实际却调 startListening 重新开始采集，用户以为已经停了。
+     * 现在 starting / listening / no-audio 一律无条件停止。
      */
-    if (current === 'listening' || current === 'starting') await stopListening();
+    if (captureAction(current) === 'stop') await stopListening();
     else await startListening();
   }, [startListening, stopListening]);
 
@@ -857,8 +948,18 @@ export function useCopilot() {
     async (
       mode: CopilotMode,
       options?: { current?: string; chinese?: string; reveal?: boolean },
-    ) => {
+    ): Promise<boolean> => {
       const config = settingsRef.current;
+      const fromChinese = mode === 'from-chinese';
+      const compose = useUiStore.getState();
+      if (fromChinese) {
+        compose.setCompose({
+          submitted: options?.chinese ?? '',
+          phase: 'pending',
+          error: '',
+          resultCount: 0,
+        });
+      }
       /*
        * 请求一开始就把「用哪份上下文、算第几轮、编号是多少」全部定下来。
        *
@@ -883,6 +984,12 @@ export function useCopilot() {
       setBusy(true);
       setError(null);
       setLastMode(mode);
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        // 真的掐断主进程里那次请求，不能只丢渲染层结果。
+        void window.copilot.aiCancel(requestId);
+      }, REPLY_TIMEOUT_MS);
       try {
         const raw = await window.copilot.aiReply({
           context,
@@ -894,9 +1001,9 @@ export function useCopilot() {
           requestId,
         });
         // 已经有更新的请求了 → 这一份是旧答案，丢掉，别覆盖新的。
-        if (seq !== replySeqRef.current) {
+        if (seq !== replySeqRef.current || timedOut) {
           window.copilot.log('INFO', 'Renderer', `drop stale reply #${seq}`);
-          return;
+          return false;
         }
         const drafts = JSON.parse(raw) as ReplyDraft[];
         // reveal=false 表示这批回复是自动来的，不许把用户打开的面板抢走 ——
@@ -907,12 +1014,26 @@ export function useCopilot() {
           {
           reveal: options?.reveal ?? true,
         });
+        if (fromChinese) {
+          useUiStore.getState().setCompose({
+            phase: drafts.length ? 'success' : 'error',
+            error: drafts.length ? '' : '没有生成可用回复，草稿已保留，可点重试。',
+            resultCount: drafts.length,
+          });
+        }
+        return drafts.length > 0;
       } catch (error) {
         // 过时的失败同样不弹错：用户等的是新的那一次。
-        if (seq !== replySeqRef.current) return;
+        if (seq !== replySeqRef.current) return false;
         // 把英文报错翻成人话：告诉用户哪里错了 + 怎么改，而不是「失败了」。
         const info = describeAiError(error);
-        setError(`${info.title}｜${info.hint}`);
+        const message = timedOut
+          ? `生成超时（超过 ${Math.round(REPLY_TIMEOUT_MS / 1000)} 秒）｜草稿已保留，可点「重试」。`
+          : `${info.title}｜${info.hint}。草稿已保留，可点「重试」。`;
+        setError(message);
+        if (fromChinese) {
+          useUiStore.getState().setCompose({ phase: 'error', error: message, resultCount: 0 });
+        }
         /*
          * 日志只记错误码。
          *
@@ -920,8 +1041,14 @@ export function useCopilot() {
          * —— 也就是对方刚说的话和你的整段上下文。写进 app.log 就等于把对话
          * 正文落到了磁盘上，这正是「音频和对话正文不落盘」要守住的那条线。
          */
-        window.copilot.log('ERROR', 'Renderer', `reply failed: ${info.code}`);
+        window.copilot.log(
+          'ERROR',
+          'Renderer',
+          `reply failed: ${timedOut ? 'TIMEOUT' : info.code}`,
+        );
+        return false;
       } finally {
+        clearTimeout(timer);
         // 用计数而不是布尔：A、B 并发时，A 先结束不能把 B 的忙碌态一起关掉。
         repliesPendingRef.current = Math.max(0, repliesPendingRef.current - 1);
         if (repliesPendingRef.current === 0) setBusy(false);

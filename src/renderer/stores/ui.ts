@@ -13,6 +13,36 @@ type ReplyMode =
   | 'didnt-catch'
   | 'from-chinese';
 
+/**
+ * 「中文 → 外语」这条链路的状态（0.6.3）。
+ *
+ * 0.6.2 提交后立刻把输入框清空，结果还没回来草稿就没了；失败/超时时
+ * 既看不到错误，也没有「重试同一句」的入口。这里把 draft（输入框内容）、
+ * submitted（最近一次提交的原文，重试用它）和 phase 放进 store，
+ * 让底部输入区与常驻状态条读同一份数据 —— 展开更多、小窗口、大字号
+ * 都不会把结果或错误藏起来。
+ */
+export type ComposePhase = 'idle' | 'pending' | 'success' | 'error';
+
+export interface ComposeState {
+  /** 输入框里的当前文字（用户还能继续改）。 */
+  draft: string;
+  /** 最近一次真正提交出去的原文，失败重试时用它。 */
+  submitted: string;
+  phase: ComposePhase;
+  error: string;
+  /** 成功时生成了几条回复，状态条据此报「已生成 N 条」。 */
+  resultCount: number;
+}
+
+const INITIAL_COMPOSE: ComposeState = {
+  draft: '',
+  submitted: '',
+  phase: 'idle',
+  error: '',
+  resultCount: 0,
+};
+
 interface UiState {
   status: ListeningStatus;
   statusMessage: string;
@@ -39,6 +69,9 @@ interface UiState {
    */
   playback: 'playing' | 'paused';
   setPlayback: (playback: 'playing' | 'paused') => void;
+  compose: ComposeState;
+  setCompose: (patch: Partial<ComposeState>) => void;
+  resetCompose: () => void;
   /**
    * Latest loudness reading from the capture sidecar. `levelAt` lets the UI
    * notice that readings stopped (engine died) instead of showing a frozen bar.
@@ -80,6 +113,9 @@ export const useUiStore = create<UiState>((set) => ({
   speakingId: null,
   lastMode: null,
   playback: 'playing',
+  compose: { ...INITIAL_COMPOSE },
+  setCompose: (patch) => set((state) => ({ compose: { ...state.compose, ...patch } })),
+  resetCompose: () => set({ compose: { ...INITIAL_COMPOSE } }),
   setPlayback: (playback) => set({ playback }),
   level: null,
   levelAt: 0,

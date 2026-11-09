@@ -1,5 +1,12 @@
 import { IconClose, IconLock, IconMinus, IconPause, IconPlay, IconSettings, IconWave } from './icons';
 import type { ListeningStatus } from '../../shared/types';
+import {
+  captureButtonLabel,
+  captureButtonAria,
+  captureStatusText,
+  captureAnnouncement,
+  isCaptureActive,
+} from '../../shared/capture-state';
 
 interface Props {
   status: ListeningStatus;
@@ -13,21 +20,10 @@ interface Props {
 }
 
 /**
- * 状态文字。
- *
- * 每一档都要能**单独读懂**，不能靠颜色区分 —— 色觉障碍用户看不到那个点，
- * 而且「没有声音进来」这种话单独出现时，用户分不清是「没启动」还是
- * 「启动了但对方没说话」。`starting` 是 0.4.0 新增的中间态。
+ * 状态文字统一取自 shared/capture-state.ts —— 标题栏、音源条、快捷键
+ * 只准读这一份，避免 0.6.2 那种「同一个时刻标题栏写开始采集、音源条写暂停」。
  */
-const STATUS_TEXT: Record<ListeningStatus, string> = {
-  idle: '未开始采集',
-  starting: '正在连接音频…',
-  listening: '正在采集',
-  paused: '已暂停',
-  'no-audio': '采集中，暂未收到声音',
-  offline: '离线',
-  error: '采集失败',
-};
+const statusText = (status: ListeningStatus) => captureStatusText(status);
 
 /** 状态点的颜色走语义令牌，不再到处写 emerald/amber/rose。 */
 const STATUS_DOT: Record<ListeningStatus, string> = {
@@ -50,15 +46,10 @@ export function TitleBar({
   onToggleAlwaysOnTop,
   onToggleLock,
 }: Props) {
-  const listening = status === 'listening' || status === 'starting';
-  /*
-   * 标题栏只说「一句话状态」，详细原因交给下面那条音源条。
-   *
-   * 以前这里优先显示 statusMessage，于是同一个意思在屏幕上出现两遍
-   * （标题栏「正在连接音频设备…」+ 音源条「正在连接音频设备…」），
-   * 而且两条的粒度还不一样，读起来像两件不同的事。字数也更省。
-   */
-  const statusLabel = STATUS_TEXT[status];
+  // 0.6.3：与音源条、快捷键共用 isCaptureActive；no-audio 也是「采集中」。
+  const listening = isCaptureActive(status);
+  const statusLabel = statusText(status);
+  const announcement = captureAnnouncement(status);
 
   return (
     <div className="drag-region flex items-center gap-2.5 border-b border-line-soft px-3 py-2.5">
@@ -79,6 +70,8 @@ export function TitleBar({
             role="status"
             aria-live="polite"
             aria-atomic="true"
+            aria-label={announcement}
+            title={statusMessage || announcement}
             className={`truncate text-[10.5px] ${
               status === 'error' ? 'text-danger/90' : 'text-white/55'
             }`}
@@ -103,8 +96,8 @@ export function TitleBar({
 
       <div className="no-drag flex shrink-0 items-center gap-0.5">
         <IconButton
-          label={listening ? '暂停采集' : '开始采集'}
-          hint={listening ? '暂停采集（Alt + P）' : '开始采集电脑里的声音（Alt + P）'}
+          label={captureButtonLabel(status)}
+          hint={captureButtonAria(status)}
           onClick={onToggleListening}
           tone={listening ? 'accent' : 'default'}
         >

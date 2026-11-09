@@ -77,8 +77,25 @@ ASR_CONCURRENCY = max(1, int(os.getenv("COPILOT_ASR_CONCURRENCY", "1")))
 #: 否则多个 3 秒片段会同时吃满 CPU，还会把事件循环堵住。
 ASR_GATE = threading.BoundedSemaphore(ASR_CONCURRENCY)
 REAL_DISABLED = os.getenv("COPILOT_REAL_DISABLED") == "1"
+# 反馈提交原先没接限流，任何人都能无限写库。现在按「经验证会话 / 来源 IP」的
+# 哈希单独计数（不挤占翻译主链路的 90 次/分），并给请求体一个字节上限。
+FEEDBACK_RATE_PER_MIN = int(os.getenv("COPILOT_FEEDBACK_RATE_PER_MIN", "5"))
+FEEDBACK_MAX_BODY_BYTES = int(os.getenv("COPILOT_FEEDBACK_MAX_BODY_BYTES", str(64 * 1024)))
+
+# 日志必须**先于**任何可能失败的子系统初始化：反馈库在只读沙箱里构造会抛异常，
+# 若 except 里的 LOG 尚未定义，会再抛 NameError 把整个 `import app` 拖垮，
+# 连 /api/health 都起不来。先把日志装好，再开库。
+logging.basicConfig(
+    level=logging.INFO,
+    format='{"ts":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}',
+)
+LOG = logging.getLogger("copilot")
+
+ADMIN_TOKEN = os.getenv("COPILOT_ADMIN_TOKEN", "")
 
 # 反馈库是**文件**，不是内存字典：进程重启后仍可按编号查到。
+# 目录由 COPILOT_DATA_DIR 配置，部署时指向平台持久卷；未配置时仍用旧的
+# `server/data`，保持本地开发与旧发布包兼容。
 # 初始化失败不能拖垮翻译主链路（部署环境可能是只读沙箱），
 # 这时反馈接口明确返回 503「未启用持久存储」，绝不假装保存成功。
 _data_dir = Path(os.getenv("COPILOT_DATA_DIR") or (Path(__file__).resolve().parent / "data"))
@@ -87,13 +104,6 @@ try:
 except Exception as exc:  # pragma: no cover - 只在异常部署环境出现
     LOG.warning("feedback-store-unavailable type=%s", type(exc).__name__)
     FEEDBACK = None
-ADMIN_TOKEN = os.getenv("COPILOT_ADMIN_TOKEN", "")
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='{"ts":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}',
-)
-LOG = logging.getLogger("copilot")
 
 app = FastAPI(title="AI Conversation Copilot Web API", version=VERSION, docs_url=None, redoc_url=None)
 
@@ -104,7 +114,7 @@ if _origins:
         allow_origins=_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST"],
-        allow_headers=["content-type", "x-session-id"],
+        allow_headers=["content-type", "x-session-id", "x-feedback-token"],
     )
 
 
@@ -134,6 +144,7 @@ class Store:
         self.lock = threading.Lock()
         self.sessions: dict[str, Session] = {}
         self.by_ip: dict[str, Bucket] = defaultdict(Bucket)
+        self.feedback_by_key: dict[str, Bucket] = defaultdict(Bucket)
         self.counters = {"translate": 0, "transcribe": 0, "reply": 0, "rejected": 0}
 
     def new_session(self) -> Session:
@@ -206,6 +217,22 @@ class Store:
             while bucket.hits and now - bucket.hits[0] > 60:
                 bucket.hits.popleft()
             if len(bucket.hits) >= RATE_PER_MIN:
+                return False
+            bucket.hits.append(now)
+            return True
+
+    def feedback_rate_ok(self, key: str) -> bool:
+        """反馈专用限流：按「经验证会话 / 来源 IP」哈希计数，独立于主链路。
+
+        被拒的请求直接在这里挡掉，不会走到 FEEDBACK.submit()，因此库里不会
+        因为一次被限流的提交多出记录。
+        """
+        now = time.time()
+        with self.lock:
+            bucket = self.feedback_by_key[key]
+            while bucket.hits and now - bucket.hits[0] > 60:
+                bucket.hits.popleft()
+            if len(bucket.hits) >= FEEDBACK_RATE_PER_MIN:
                 return False
             bucket.hits.append(now)
             return True
@@ -394,26 +421,53 @@ def translate_cascade(
 SESSION_HEADER = "x-session-id"
 
 
-def session_id_from(request: Request) -> str | None:
-    """会话标识的两个来源：HttpOnly Cookie（主）与 `X-Session-Id` 请求头（备）。
+def session_candidates(request: Request) -> list[str]:
+    """会话凭据候选：HttpOnly Cookie（主）与 `X-Session-Id` 请求头（备），按优先级去重。
 
     为什么要有第二种：生产环境在反向代理后面，Cookie 的任何一环（域、路径、
     网关改写、浏览器隐私设置）出问题，都会表现成「刚建的会话就用不了」。
     请求头由页面自己带，不依赖 Cookie 策略，能把这类故障排除掉。
-    两种都校验同一个服务端会话表，没有放宽鉴权。
+
+    这里只**收集候选**，不决定用哪个：认不认账由 `session_from` 逐一查服务端
+    会话表决定。旧实现「Cookie 非空就直接返回」，于是一个失效/别的实例签发的
+    Cookie 会把有效的请求头挤掉，表现成「明明带了新会话却被判 unknown」。
     """
-    cookie = request.cookies.get("sid")
-    if cookie:
-        return cookie
-    header = request.headers.get(SESSION_HEADER)
-    if header:
-        value = header.strip()
-        return value or None
-    return None
+    values: list[str] = []
+    for raw in (request.cookies.get("sid"), request.headers.get(SESSION_HEADER)):
+        value = (raw or "").strip()
+        if value and value not in values:
+            values.append(value)
+    return values
+
+
+def session_from(request: Request) -> tuple[Session | None, str]:
+    """逐一验证候选凭据，取第一个「服务端认识且未过期」的会话。
+
+    Cookie 与请求头查的是同一张会话表、同一份 SESSION_TTL，没有放宽任何鉴权；
+    任一路有效就放行。全部无效时返回最贴近的原因（unknown/expired 优先于 missing），
+    便于区分「压根没带凭据」和「带了但本进程不认」。
+    """
+    candidates = session_candidates(request)
+    if not candidates:
+        return None, "missing"
+    reason = "unknown"
+    for sid in candidates:
+        session, why = STORE.lookup(sid)
+        if session is not None:
+            return session, ""
+        if why in ("unknown", "expired"):
+            reason = why
+    return None, reason
+
+
+def session_id_from(request: Request) -> str | None:
+    """兼容旧调用：只取第一个候选，仅供非鉴权用途（如去重键兜底）。"""
+    candidates = session_candidates(request)
+    return candidates[0] if candidates else None
 
 
 def require_session(request: Request) -> Session | JSONResponse:
-    session, reason = STORE.lookup(session_id_from(request))
+    session, reason = session_from(request)
     if session is None:
         STORE.bump("rejected")
         return JSONResponse(
@@ -872,31 +926,60 @@ class FeedbackBody(BaseModel):
 
 
 def _feedback_session_key(request: Request) -> str:
-    """匿名去重键：会话 id 优先，没有会话时用来源 IP 的哈希。
+    """匿名去重 / 限流键：已验证会话的 sid 优先，否则退回来源 IP。
 
-    只存哈希，不把 IP / 会话 token 原文写进反馈表。
+    用 session_from 验证过的会话，避免「随手编一个 sid」就绕过去重与限流；
+    没有任何有效会话时仍按来源 IP 兜底（一样受限流约束）。只存哈希，
+    不把 IP / 会话 token 原文写进反馈表或日志。
     """
-    raw = session_id_from(request)
-    if not raw:
-        raw = request.client.host if request.client else "anonymous"
+    session, _ = session_from(request)
+    raw = session.sid if session is not None else (
+        request.client.host if request.client else "anonymous"
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
 
 @app.post("/api/feedback")
 def feedback_submit(request: Request, body: FeedbackBody) -> JSONResponse:
+    # 1) 持久库必须真的可用：不可用就明确 503，绝不返回「已收到」这种伪造回执。
     if FEEDBACK is None:
         return error(request, "FEEDBACK_STORE_UNAVAILABLE", 503, "这台服务没有启用持久反馈库")
-    result, reason = FEEDBACK.submit(
-        session_key=_feedback_session_key(request),
-        where_wrong=body.where_wrong,
-        suggestion=body.suggestion,
-        category=body.category,
-        original=body.original,
-        translation=body.translation,
-        reply_text=body.reply_text,
-        diagnostics=body.diagnostics,
-        attach_context=body.attach_context,
+
+    # 2) 请求体大小上限：先看 Content-Length，再按各文本字段合计兜底，
+    #    防止超长 diagnostics / original 撑爆内存与库（chunked 无长度头也拦得住）。
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit() and int(content_length) > FEEDBACK_MAX_BODY_BYTES:
+        return error(request, "TOO_LARGE", 413, "反馈内容过大")
+    fields_bytes = sum(
+        len((value or "").encode("utf-8"))
+        for value in (
+            body.where_wrong, body.suggestion, body.category, body.original,
+            body.translation, body.reply_text, body.diagnostics,
+        )
     )
+    if fields_bytes > FEEDBACK_MAX_BODY_BYTES:
+        return error(request, "TOO_LARGE", 413, "反馈内容过大")
+
+    session_key = _feedback_session_key(request)
+    # 3) 按来源/会话的速率限制：被挡在这里的请求不会走到 submit，库里不会多记录。
+    if not STORE.feedback_rate_ok(session_key):
+        return error(request, "RATE_LIMITED", 429, "反馈提交太频繁，请稍后再试")
+
+    try:
+        result, reason = FEEDBACK.submit(
+            session_key=session_key,
+            where_wrong=body.where_wrong,
+            suggestion=body.suggestion,
+            category=body.category,
+            original=body.original,
+            translation=body.translation,
+            reply_text=body.reply_text,
+            diagnostics=body.diagnostics,
+            attach_context=body.attach_context,
+        )
+    except Exception as exc:  # sqlite 运行期故障：明确失败，不假装保存成功
+        LOG.warning("feedback-submit-failed type=%s", type(exc).__name__)
+        return error(request, "FEEDBACK_STORE_UNAVAILABLE", 503, "反馈库暂时不可用，内容没有保存")
     if reason == "EMPTY":
         return error(request, "FEEDBACK_EMPTY", 400, "请写一下哪里不对或建议怎么说")
     if reason == "TOO_LONG":
@@ -913,11 +996,21 @@ def feedback_submit(request: Request, body: FeedbackBody) -> JSONResponse:
     return JSONResponse({"ok": True, **result})
 
 
+FEEDBACK_TOKEN_HEADER = "x-feedback-token"
+
+
 @app.get("/api/feedback/{ticket}")
-def feedback_lookup(ticket: str, token: str = "") -> JSONResponse:
+def feedback_lookup(ticket: str, request: Request, token: str = "") -> JSONResponse:
+    """匿名凭证查询：优先读 `X-Feedback-Token` 请求头，不再把 token 放进 URL。
+
+    DEPRECATED：`?token=...` 旧方式只作短期兼容。URL 会进浏览器历史、反向代理
+    与 Uvicorn access_log，把一次性凭证写进这些地方等于泄露。新前端一律用请求头；
+    部署入口同时关闭了默认 access_log（见 deploy/Dockerfile CMD、server/run.py）。
+    """
     if FEEDBACK is None:
         return JSONResponse({"error": {"code": "FEEDBACK_STORE_UNAVAILABLE"}}, status_code=503)
-    record = FEEDBACK.lookup(ticket, token)
+    credential = (request.headers.get(FEEDBACK_TOKEN_HEADER) or "").strip() or token
+    record = FEEDBACK.lookup(ticket, credential)
     if record is None:
         # 凭证不对时**不返回任何正文**，也不区分「编号不存在」和「token 错」。
         return JSONResponse(

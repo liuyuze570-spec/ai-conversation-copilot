@@ -101,12 +101,14 @@ export function audioUiState(
     case 'paused':
       return {
         phase: 'paused',
-        label: '已暂停',
-        detail: message || '采集已停止，不会再产生新字幕。点「开始」继续。',
+        // 0.6.3：改成「已停止采集」。旧文案「已暂停」让用户以为音频还在，
+        // 而实际上 stopListening 已经关掉音轨并释放了设备。
+        label: '已停止采集',
+        detail: message || '音频设备已释放，不会再产生新字幕。点「开始采集」重新打开。',
         tone: 'idle',
         action: 'start',
         showReconnect: false,
-        announcement: '已暂停采集',
+        announcement: '已停止采集，音频设备已释放',
       };
     case 'error':
       return {

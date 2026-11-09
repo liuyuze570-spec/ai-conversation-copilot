@@ -19,6 +19,7 @@ import { registerHistoryIpc } from './history-ipc';
 import { runV050SelfCheck } from './selftest-v050';
 import { runV060SelfCheck } from './selftest-v060';
 import { runV061RestartCheck } from './selftest-v061';
+import { runV063CaptureCheck } from './selftest-v063';
 import { closeHistoryStore } from './history-db';
 import {
   createOverlayWindow,
@@ -809,6 +810,14 @@ if (!gotLock) {
      */
     if (process.env.COPILOT_V061) {
       setTimeout(() => void runV061RestartCheck(), 1500);
+    }
+
+    /*
+     * 0.6.3 采集状态与中文草稿检查：COPILOT_V063_CHECK=<输出目录>。
+     * 验证「启动不自动采集」「开始/停止采集状态一致」「中文草稿保留到成功」。
+     */
+    if (process.env.COPILOT_V063_CHECK) {
+      setTimeout(() => void runV063CaptureCheck(), 2200);
     }
 
     // Dev helper: COPILOT_SCREENSHOT=<path> captures the overlay and exits.

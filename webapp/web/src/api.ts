@@ -451,10 +451,14 @@ export async function queryFeedback(
   token: string,
   signal?: AbortSignal,
 ): Promise<FeedbackRecord> {
-  const query = new URLSearchParams({ token });
-  const response = await fetch(
-    url(`/api/feedback/${encodeURIComponent(ticket)}?${query.toString()}`),
-    { method: 'GET', credentials: 'same-origin', signal },
-  );
+  // 查询凭证走请求头，不拼进 URL：URL 会进浏览器历史、反向代理与 access_log，
+  // 把一次性凭证写进这些地方等于泄露。后端仍保留 ?token= 旧方式做短期兼容，
+  // 但这里不再使用（该方式已废弃，见 deploy/README.md）。
+  const response = await fetch(url(`/api/feedback/${encodeURIComponent(ticket)}`), {
+    method: 'GET',
+    credentials: 'same-origin',
+    headers: { 'x-feedback-token': token },
+    signal,
+  });
   return json<FeedbackRecord>(response);
 }

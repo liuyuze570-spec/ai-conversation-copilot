@@ -257,6 +257,15 @@ export class TabAudioSession {
       this.fail('UNSUPPORTED', '这个浏览器不支持标签页音频捕获。请用桌面版 Chrome 或 Edge 再试。');
       return;
     }
+    /*
+     * 把「等待授权」也纳入取消代次。弹窗没选完时用户可能已经点停止、或离开页面
+     * （卸载先 dispose 再 stop），授权 Promise 随后才返回。早期实现只检查 attach
+     * 内部的代次，授权返回后直接 attach，状态会从 requesting → stopping → stopped
+     * → capturing 倒回去，新拿到的 audio/video 轨仍 live —— 等于在已卸载的组件上
+     * 继续采集。这里在请求之初就领一个代次，授权回来时若代次已变或已卸载，
+     * 立刻停掉刚取得的全部轨道，绝不 attach。
+     */
+    const generation = ++this.generation;
     this.opts.onState('requesting', '等待你在浏览器弹窗里选择标签页并勾选「分享标签页音频」');
     let stream: MediaStream;
     try {
@@ -271,12 +280,21 @@ export class TabAudioSession {
         surfaceSwitching: 'include',
       });
     } catch (error) {
+      // 授权还没回来会话就已经结束：不再往（可能已卸载的）组件里报错。
+      if (generation !== this.generation || this.disposed) return;
       const name = error instanceof DOMException ? error.name : '';
       if (name === 'NotAllowedError' || name === 'AbortError') {
         this.fail('USER_CANCELLED', '你取消了选择，或浏览器拒绝了捕获。没有开始任何采集。');
       } else {
         this.fail('CAPTURE_FAILED', `标签页捕获失败：${describeError(error)}`);
       }
+      return;
+    }
+    if (generation !== this.generation || this.disposed) {
+      // 授权返回时会话已停止 / 组件已卸载：立刻停掉**全部**轨道（audio 与 video），
+      // 不进入 attach、不把状态改成 capturing。video 轨一直没被读取，不停会留下
+      // 悬挂的捕获会话。
+      for (const track of stream.getTracks()) track.stop();
       return;
     }
     await this.attach(stream, 'video-tab');
