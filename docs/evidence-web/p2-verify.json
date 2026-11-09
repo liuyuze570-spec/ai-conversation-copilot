@@ -1,9 +1,9 @@
 {
   "base": "https://en-zh-caption-helper.app.workbuddy.host/?sharecode=X3A6YY6GQH",
-  "at": "2026-11-09T07:39:13.123Z",
+  "at": "2026-11-09T09:07:32.003Z",
   "steps": [
     {
-      "name": "V1 web.9 版本",
+      "name": "V1 web.9 及以后的版本",
       "data": "PASS"
     },
     {
@@ -86,25 +86,13 @@
           "seq": 1,
           "text": "Please send the report by 3 p.m. tomorrow.",
           "translation": "请在明天下午3时前将报告发送。",
-          "totalMs": 1727
+          "totalMs": 5542
         },
         {
           "seq": 2,
           "text": "I will bring the blue folder to the office at 4.5.",
           "translation": "我会把蓝文件夹带到4.5的办公室",
-          "totalMs": 1225
-        },
-        {
-          "seq": 3,
-          "text": "13 p.m. on Friday.",
-          "translation": "星期五下午13时。",
-          "totalMs": 1229
-        },
-        {
-          "seq": 4,
-          "text": "Not on Tuesday.",
-          "translation": "周二不行 周",
-          "totalMs": 1149
+          "totalMs": 9222
         }
       ]
     },
@@ -139,17 +127,15 @@
     {
       "name": "STATS",
       "data": {
-        "slices": 4,
-        "sent": 4,
+        "slices": 5,
+        "sent": 5,
         "silent": 0,
         "dropped": 0,
-        "lines": 4,
-        "budgetLeft": 288,
+        "lines": 2,
+        "budgetLeft": 294,
         "totalMs": [
-          1727,
-          1225,
-          1229,
-          1149
+          5542,
+          9222
         ]
       }
     },
@@ -211,7 +197,7 @@
         "slices": 3,
         "silent": 3,
         "sent": 0,
-        "lines": 4,
+        "lines": 2,
         "state": "waiting-sound"
       }
     },
@@ -277,9 +263,9 @@
       "partial": false,
       "asrMode": "local-whisper",
       "translateMode": "local-onnx",
-      "asrMs": 720,
-      "translateMs": 1006,
-      "totalMs": 1727
+      "asrMs": 1440,
+      "translateMs": 4102,
+      "totalMs": 5542
     },
     {
       "seq": 2,
@@ -288,57 +274,30 @@
       "partial": false,
       "asrMode": "local-whisper",
       "translateMode": "local-onnx",
-      "asrMs": 527,
-      "translateMs": 698,
-      "totalMs": 1225
-    },
-    {
-      "seq": 3,
-      "text": "13 p.m. on Friday.",
-      "translation": "星期五下午13时。",
-      "partial": false,
-      "asrMode": "local-whisper",
-      "translateMode": "local-onnx",
-      "asrMs": 662,
-      "translateMs": 567,
-      "totalMs": 1229
-    },
-    {
-      "seq": 4,
-      "text": "Not on Tuesday.",
-      "translation": "周二不行 周",
-      "partial": false,
-      "asrMode": "local-whisper",
-      "translateMode": "local-onnx",
-      "asrMs": 684,
-      "translateMs": 465,
-      "totalMs": 1149
+      "asrMs": 1359,
+      "translateMs": 5309,
+      "totalMs": 9222
     }
   ],
   "stats": {
-    "slices": 4,
-    "sent": 4,
+    "slices": 5,
+    "sent": 5,
     "silent": 0,
     "dropped": 0,
-    "lines": 4,
-    "budgetLeft": 288,
+    "lines": 2,
+    "budgetLeft": 294,
     "asrMs": [
-      720,
-      527,
-      662,
-      684
+      1440,
+      1359,
+      1319
     ],
     "translateMs": [
-      1006,
-      698,
-      567,
-      465
+      4102,
+      5309
     ],
     "totalMs": [
-      1727,
-      1225,
-      1229,
-      1149
+      5542,
+      9222
     ]
   },
   "consoleErrors": []

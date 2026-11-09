@@ -1,6 +1,6 @@
 {
-  "base": "http://127.0.0.1:8903",
-  "at": "2026-11-09T08:45:44.514Z",
+  "base": "https://en-zh-caption-helper.app.workbuddy.host/?sharecode=X3A6YY6GQH",
+  "at": "2026-11-09T09:12:23.271Z",
   "steps": [
     {
       "name": "V1 版本 0.7.0-web.10",
@@ -110,7 +110,7 @@
       "data": {
         "lines": [
           "Please send the report by 3 p.m. tomorrow.",
-          "I will bring the blue folder to the office at 4.50 p.m. 15 p.m. on Friday."
+          "I will bring the blue folder to the office at 4.5."
         ],
         "transcript": 2
       }
@@ -129,8 +129,8 @@
         "state": "paused",
         "passage": {
           "status": "done",
-          "text": "Please send the report by 3 p.m. tomorrow. I will bring the blue folder to the office at 4.50 p.m. 15 p.m. on Friday.",
-          "translation": "请在明天下午3时前送交报告。 我将在星期五下午4时50分15分把蓝文件夹送到办公室。",
+          "text": "Please send the report by 3 p.m. tomorrow. I will bring the blue folder to the office at 4.5.",
+          "translation": "请在明天下午3时前把报告送去 我会在4.5点把蓝文件夹送到办公室",
           "covered": 2,
           "total": 2,
           "chunks": 1,
@@ -140,7 +140,7 @@
           "omitted": 0,
           "stale": false,
           "trigger": "pause",
-          "ms": 1164,
+          "ms": 1643,
           "error": ""
         },
         "lines": 2
@@ -245,7 +245,7 @@
     {
       "name": "PASSAGE_REPLIES",
       "data": {
-        "original": "Please send the report by 3 p.m. tomorrow. I will bring the blue folder to the office at 4.50 p.m. 15 p.m. on Friday. The meeting is not on Tuesday.",
+        "original": "Please send the report by 3 p.m. tomorrow. I will bring the blue folder to the office at 4.5. The meeting is not on Tuesday.",
         "replies": [
           "I see — thanks for letting me know.",
           "Could you say a bit more about that?",
@@ -302,8 +302,8 @@
   ],
   "passage": {
     "status": "done",
-    "text": "Please send the report by 3 p.m. tomorrow. I will bring the blue folder to the office at 4.50 p.m. 15 p.m. on Friday. The meeting is not on Tuesday.",
-    "translation": "我将在星期五下午4时50分15分把蓝文件夹送到办公室,星期二不开会。",
+    "text": "Please send the report by 3 p.m. tomorrow. I will bring the blue folder to the office at 4.5. The meeting is not on Tuesday.",
+    "translation": "请在明天下午3时前将报告送交。 我将在4.5处把蓝文件夹带到办公室。会议",
     "covered": 3,
     "total": 3,
     "chunks": 1,
@@ -313,7 +313,7 @@
     "omitted": 0,
     "stale": false,
     "trigger": "stop",
-    "ms": 1158,
+    "ms": 1884,
     "error": ""
   },
   "lines": [
@@ -324,31 +324,31 @@
       "partial": false,
       "asrMode": "local-whisper",
       "translateMode": "local-onnx",
-      "asrMs": 450,
-      "translateMs": 569,
-      "totalMs": 1019
+      "asrMs": 673,
+      "translateMs": 983,
+      "totalMs": 1657
     },
     {
-      "seq": 3,
-      "text": "I will bring the blue folder to the office at 4.50 p.m. 15 p.m. on Friday.",
-      "translation": "我将于星期五下午4时50分15分把蓝文件夹带回办公室。",
+      "seq": 2,
+      "text": "I will bring the blue folder to the office at 4.5.",
+      "translation": "我会把蓝文件夹带到4.5的办公室",
       "partial": false,
       "asrMode": "local-whisper",
       "translateMode": "local-onnx",
-      "asrMs": 433,
-      "translateMs": 844,
-      "totalMs": 1277
+      "asrMs": 618,
+      "translateMs": 676,
+      "totalMs": 1294
     },
     {
-      "seq": 4,
+      "seq": 3,
       "text": "The meeting is not on Tuesday.",
       "translation": "会议不是在星期二举行。",
       "partial": false,
       "asrMode": "local-whisper",
       "translateMode": "local-onnx",
-      "asrMs": 430,
-      "translateMs": 255,
-      "totalMs": 685
+      "asrMs": 567,
+      "translateMs": 506,
+      "totalMs": 1073
     }
   ],
   "consoleErrors": []

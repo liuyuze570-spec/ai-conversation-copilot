@@ -65,10 +65,29 @@ async function translateOnce(text) {
   await page.click('[data-testid="original-input"]', { clickCount: 3 });
   await page.keyboard.press('Backspace');
   await page.type('[data-testid="original-input"]', text, { delay: 0 });
-  await page.click('[data-testid="translate"]');
+  /*
+   * 只等「译文非空」会读到上一句还留在 DOM 里的旧回复卡：点击返回时 React
+   * 清空状态是异步的，旧节点可能仍在。2026-11-09 线上首跑 A7–A10 四项就是这样
+   * 误报的（本地 8903 没触发，是时序差异）。改为等真实响应 + 译文确实换成新值。
+   */
+  const previous = await page.$eval(
+    '[data-testid="translation-text"]',
+    (el) => el.textContent.trim(),
+  ).catch(() => '');
+  await Promise.all([
+    page.waitForResponse(
+      (res) => res.url().includes('/api/translate') && res.request().method() === 'POST',
+      { timeout: 120000 },
+    ),
+    page.click('[data-testid="translate"]'),
+  ]);
   await page.waitForFunction(
-    () => (document.querySelector('[data-testid="translation-text"]')?.textContent ?? '').trim().length > 0,
+    (prev) => {
+      const current = (document.querySelector('[data-testid="translation-text"]')?.textContent ?? '').trim();
+      return current.length > 0 && current !== prev;
+    },
     { timeout: 120000 },
+    previous,
   );
   await page.waitForSelector('[data-testid^="reply-en-"]', { timeout: 120000 });
   return page.$$eval('[data-testid^="reply-en-"]', (els) => els.map((el) => el.textContent.trim()));

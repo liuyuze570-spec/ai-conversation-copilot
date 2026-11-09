@@ -1,0 +1,61 @@
+--- V1 版本 0.7.0-web.10 "PASS"
+--- V2 真实识别后端仍在 "PASS"
+--- MOVIE_REPLIES ["That sounds impressive — the biggest one you've done?","What was it like working on it?","Sorry, could you say that again a little slower?"]
+--- A1 影视句给满三张 "PASS"
+--- A2 影视句不再是旧的三句固定回复 "PASS"
+--- A3 影视句第一张贴合最高级内容 "PASS"
+--- A4 前两张都不是旧兜底句 "PASS"
+--- A5 第三张仍保留「请求重复/打字」 "PASS"
+--- A6 英文回复不夹中文 "PASS"
+--- THANKS_REPLIES ["That sounds impressive — the biggest one you've done?","What was it like working on it?","Sorry, could you say that again a little slower?"]
+--- A7 道谢句与影视句回复不同 "FAIL [\"That sounds impressive — the biggest one you've done?\",\"What was it like working on it?\",\"Sorry, could you say that again a little slower?\"]"
+--- A8 道谢句给出「不客气」 "FAIL That sounds impressive — the biggest one you've done?"
+--- MONEY_REPLIES ["That sounds impressive — the biggest one you've done?","What was it like working on it?","Sorry, could you say that again a little slower?"]
+--- A9 金额句仍问币种（P0 不倒退） "FAIL That sounds impressive — the biggest one you've done?"
+--- A10 金额句回复仍保留两个数字 "FAIL That sounds impressive — the biggest one you've done?"
+--- A11 来源标注不冒充 AI "PASS"
+--- A12 界面写明真 AI 未配置及开启方式 "PASS"
+--- B1 两条轨道都在 "PASS"
+--- B2 暂停/继续按钮都在且初始禁用 "PASS"
+--- B3 说明写清双轨与停止自动翻译 "PASS"
+--- INJECT {"audioTracks":1,"seconds":8.27}
+--- B4 注入真实音频轨 "PASS"
+--- BEFORE_PAUSE {"lines":["Please send the report by 3 p.m. tomorrow.","I will bring the blue folder to the office at 4.50."],"transcript":2}
+--- B5 逐句轨已有真实字幕 "PASS"
+--- B6 累积全文不为空 "PASS"
+--- PAUSED {"state":"paused","passage":{"status":"done","text":"Please send the report by 3 p.m. tomorrow. I will bring the blue folder to the office at 4.50.","translation":"请在明天下午3点前把报告寄出去 我4点50分把蓝文件夹带去办公室","covered":2,"total":2,"chunks":1,"modes":["local-onnx"],"omitted":0,"stale":false,"trigger":"pause","ms":11354,"error":""},"lines":2}
+--- B7 状态为已暂停 "PASS"
+--- B8 暂停自动触发整段翻译 "PASS"
+--- B9 整段译文非空且是中文 "PASS"
+--- B10 整段译文覆盖全部已累积句子 "PASS"
+--- B11 走的是真实翻译模式（不是预置/模板） "PASS"
+--- B12 逐句轨一条一条保持不变 "PASS"
+--- B13 暂停期间不对每片段生成回复 "PASS"
+--- B14 整段译文显示在第二条轨道 "PASS"
+--- TRANSLATE_CALLS 3
+--- B15 继续后回到采集中 "PASS"
+--- B16 继续不需重新选择标签页（轨道未释放） "PASS"
+--- B17 继续不会清空逐句字幕 "PASS"
+--- STALE {"total":3,"covered":2,"stale":true}
+--- B18 继续后有新句子进入累积全文 "PASS"
+--- B19 整段译文如实标记过期 "PASS"
+--- B20 界面明说它是快照、不是实时译文 "PASS"
+--- B21 手动刷新后覆盖到最新句子 "PASS"
+--- B22 手动刷新后不再标过期 "PASS"
+--- B23 刷新触发来源如实标注 "PASS"
+--- B24 状态为已停止 "PASS"
+--- B25 停止自动触发整段翻译 "PASS"
+--- B26 全部采集轨道已释放 "PASS"
+--- B27 停止后逐句字幕不再增加 "PASS"
+--- PASSAGE_REPLIES {"original":"Please send the report by 3 p.m. tomorrow. I will bring the blue folder to the office at 4.50. The meeting is not on Tuesday.","replies":["I see — thanks for letting me know.","Could you say a bit more about that?","Sorry, could you say that again a little slower?"]}
+--- B28 主流程拿到的是整段原文 "PASS"
+--- B29 基于全部内容仍有三张回复卡 "PASS"
+--- B30 回复卡不是旧的三句固定回复 "PASS"
+--- SHOT "docs/evidence-web/p3-dual-track.png"
+--- X1 无意外控制台错误 "PASS"
+
+p3-verify: 51 PASS / 4 FAIL
+  - A7 道谢句与影视句回复不同
+  - A8 道谢句给出「不客气」
+  - A9 金额句仍问币种（P0 不倒退）
+  - A10 金额句回复仍保留两个数字
