@@ -1,0 +1,48 @@
+# 降级版镜像：不含 600MB 模型文件，用于快速验证「已部署 AWS 且可访问」。
+# 后端在模型缺失时优雅降级（OnnxOpusMT / faster-whisper 找不到文件不抛异常，
+# 只在 /api/health 的 runtime 里如实标注 ready=false），网站界面照常可开。
+#
+# 与完整版 Dockerfile 的区别：
+#   - 不 COPY server/models / mt/models（跳过 faster-whisper 142M + opus-mt 451M）
+#   - 其余一致：依赖照装、前端 COPY、反馈库持久卷、非 root 运行、健康检查
+FROM python:3.12-slim
+
+# faster-whisper(ctranslate2) 在 Debian slim 上需要 OpenMP 运行库
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libgomp1 \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    COPILOT_DATA_DIR=/app/data \
+    COPILOT_WHISPER_DIR=/app/models/faster-whisper-base \
+    COPILOT_MT_MODEL_DIR=/app/mt-models/Xenova/opus-mt-en-zh \
+    COPILOT_WEB_DIST=/app/web-dist
+
+WORKDIR /app
+
+COPY server/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# 运行时模块：app.py 顶层 import 的 8 个本地模块一个都不能少
+COPY server/app.py server/engine_asr.py server/engine_mt.py \
+     server/engine_mt_multi.py server/engine_mt_onnx.py \
+     server/engine_reply.py server/phrasebook.py server/feedback_store.py \
+     server/run.py /app/
+
+# 只 COPY 前端产物；模型目录刻意不 COPY（降级模式）
+COPY web/dist /app/web-dist
+
+# 非 root 运行 + 持久卷声明
+RUN useradd --create-home --uid 10001 copilot \
+ && mkdir -p /app/data \
+ && chown -R copilot:copilot /app
+VOLUME ["/app/data"]
+USER copilot
+
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status==200 else 1)"
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--proxy-headers", "--forwarded-allow-ips", "*"]
