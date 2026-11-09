@@ -13,7 +13,7 @@
 | 精简发布目录（256MB）能独立跑 | **已实测** | 从 `/f/copilot-release/web-0.7.0` 启动，首页 200、翻译 615ms、识别 419ms |
 | `Dockerfile` | **已写好，未构建** | 本机 Docker Desktop 未运行，`docker info` 连不上守护进程 |
 | 公网 HTTPS 地址 | **已上线** | WorkBuddy Sites 发布：`https://en-zh-caption-helper.app.workbuddy.host/?sharecode=X3A6YY6GQH`；2026-11-09 10:07 重新发布（含数词与中文确认句修复），首页 200 / health 200 / 真实翻译 809ms |
-| GitHub Actions | **工作流已写好，未在 GitHub 实跑** | `.github/workflows/ci.yml`：前端 typecheck + 22 套单测 + 后端 5 个 unittest（`test_mt_onnx` 无模型自动 skip）。本仓库尚未推到 GitHub，未触发过。 |
+| GitHub Actions | **CI 已真实跑通（前端 + 后端全绿）** | `.github/workflows/ci.yml`：前端 typecheck + 22 套单测 + 后端 5 个 unittest（`test_mt_onnx` 无模型自动 skip）。已推送到 GitHub（`liuyuze570-spec/ai-conversation-copilot`）并触发 run 4 = success。**CD（自动发布）未做**。 |
 | AWS 部署方案 | **方案 + Terraform 模板已产出，未真实部署** | 见 `docs/网站AWS部署方案-0.7.0-web.md` 与 `terraform/`；无 AWS 账号凭据，未创建资源。 |
 
 ---
