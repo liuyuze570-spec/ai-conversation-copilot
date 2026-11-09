@@ -395,7 +395,10 @@ const MODE_INSTRUCTION: Record<ReplyMode, string> = {
   'didnt-catch':
     'The user did not understand. Give 3 short polite ways to ask the other person to repeat or slow down.',
   'from-chinese':
-    'The user typed their own sentence (in the language they understand). Turn it into 3 natural spoken versions (simple / natural / continue) in the target language. Keep the meaning faithful — do NOT add or drop information — but make it sound natural, not translated word by word.',
+    'The user typed their own sentence (in the language they understand) and wants to say THAT EXACT meaning in the target language. This is a FAITHFUL translation task, NOT a conversation task. ' +
+    'Keep the meaning, numbers, currency, times and negations exactly as written — do NOT add any new question, follow-up, or extra information (no "When will you be here?", no added details). ' +
+    'The three versions (simple / natural / continue) must all say the SAME thing, only differing in wording — the "continue" card must NOT ask a follow-up question here. ' +
+    'Write every "english" field in the target language only, never in the user\'s own language.',
 };
 
 export function buildReplyMessages(

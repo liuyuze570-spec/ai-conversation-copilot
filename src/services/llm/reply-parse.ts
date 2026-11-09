@@ -112,3 +112,56 @@ function collectCandidates(parsed: unknown): unknown[] {
   if ('english' in record) return [record];
   return [];
 }
+
+/**
+ * 目标语言的正文里混进了别种文字，判断为「语言不对」。
+ *
+ * 实测「更多→中文转外语」的三卡里，第二条的 english 字段整个是中文
+ * （`450欧元的定金，周五前付清尾款，确认了没？`）—— 模型把「转成外语」
+ * 理解成了「用中文解释」。这条卡的 english 是要**念给对面听**的，混进
+ * 中文等于用户照着读中文给对方，完全违背「忠实中文转外语」。
+ *
+ * 判据只做「字系」判断，不做语义：English 目标时 english 里出现 CJK
+ * 方块字就是错；反过来中文目标里出现长串拉丁字母也值得警惕（但中文目标
+ * 的「英语」字段语义不同，这里只对英文目标做硬校验，其余语言留给模型）。
+ */
+export function replyInWrongLanguage(
+  english: string | undefined,
+  targetLanguage: string,
+): boolean {
+  const text = (english ?? '').trim();
+  if (!text) return true; // 空正文本来就会被上游丢掉，这里一并算「不可用」。
+  if (targetLanguage === 'English') {
+    // 英文正文里出现 CJK 方块字（中日韩）就是串语言。
+    return /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(text);
+  }
+  if (targetLanguage === 'Japanese') {
+    // 日语正文至少要有假名或汉字；纯拉丁/西里尔串基本是错语言。
+    return !/[\u3040-\u30ff\u3400-\u9fff]/.test(text);
+  }
+  if (targetLanguage === 'Korean') {
+    return !/[\uac00-\ud7af]/.test(text);
+  }
+  if (targetLanguage === 'Russian') {
+    return !/[\u0400-\u04ff]/.test(text);
+  }
+  return false;
+}
+
+/**
+ * 过滤掉「语言串了」的卡片，只保留目标语言正确的。
+ *
+ * 供真实模型链路（openai-compatible）在 parse 之后、enrich 之前调用：
+ * 结构校验只保证字段是字符串，不保证字符串是**对的语言**。忠实转译任务里
+ * 一条中文卡比没有还糟 —— 宁可少一张，也不能让用户照着中文念给对方。
+ *
+ * 返回「过滤后 + 有没有被过滤」两个信息，调用方据此决定是否提示用户重试。
+ */
+export function dropWrongLanguageDrafts<T extends { english: string }>(
+  drafts: T[],
+  targetLanguage: string,
+): { kept: T[]; dropped: number } {
+  const kept = drafts.filter((draft) => !replyInWrongLanguage(draft.english, targetLanguage));
+  return { kept, dropped: drafts.length - kept.length };
+}
+

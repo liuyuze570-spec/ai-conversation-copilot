@@ -415,7 +415,7 @@ export function SubtitleList({
   }
 
   return (
-    <div data-subtitle-list className="relative flex min-h-[88px] flex-1 flex-col">
+    <div data-subtitle-list className="relative flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between gap-2 px-3 pb-1 pt-1.5">
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="label truncate !text-white/45">对话 {items.length} 条</span>

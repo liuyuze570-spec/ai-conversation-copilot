@@ -81,5 +81,17 @@ const e = opened.epoch;
 eq(cs.isCurrentCaptureEpoch(opened, e), true, '当前代次回执接受');
 eq(cs.isCurrentCaptureEpoch(opened, e - 1), false, '旧代次回执拒绝');
 
+// ---- 切会话后「引擎重连」使 sessionId 同步 +1，新字幕继续进来 ----
+// 修复背景：渲染层 gateAfterSessionReset 把 floorSession 抬到 lastSeenSession+1，
+// 但音频引擎持续运行时 sessionId 不变，旧 sessionId 字幕会被永久挡住。
+// 修复做法是切会话时若采集运行就触发 audioReconnect()（引擎 stop→sessionSeq+1→start），
+// 使引擎 sessionId 与 floorSession 同步前进。下面钉住这个语义：
+// 引擎重连后发出的新字幕 sessionId === floorSession，必须被接受。
+const afterReconnectFloor = 6;
+eq(cs.acceptsTranscript(reset, afterReconnectFloor, 1300), true,
+  '切会话后引擎重连（sessionId 同步到 6），新字幕 sessionId=6 必须接受，不能永久被拒');
+eq(cs.acceptsTranscript(reset, 5, 1300), false,
+  '重连前仍在队列里的旧字幕 sessionId=5 仍被拒绝，不混进新会话');
+
 console.log(`capture-state: ${pass} 通过 / ${fail} 失败`);
 if (fail > 0) process.exit(1);

@@ -77,7 +77,7 @@ export function ReplyPanel({ suggestions, onSpeak, onRefine, onClose }: Props) {
     <div
       ref={scrollerRef}
       data-reply-panel
-      className="subtle-scroll max-h-[52%] space-y-2.5 overflow-y-auto border-t border-line-soft px-3 py-2"
+      className="subtle-scroll max-h-[52%] min-h-[190px] space-y-2.5 overflow-y-auto border-t border-line-soft px-3 py-2"
     >
       {/* 标题 + 风格切换一起吸顶。
           风格行如果只做成普通行，面板内容一多就会滚到吸顶标题后面去 —— 截图里

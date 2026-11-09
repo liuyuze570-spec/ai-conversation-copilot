@@ -1265,13 +1265,23 @@ function readWord(
   }
 
   /*
-   * 纯数字 / 符号原样留着。
+   * 纯数字 / 符号。
    *
-   * 「3 p.m.」里的 3 是一段字，不是一个词 —— 之前它被当成「未确定读音」，
-   * 于是整句提示被标成「部分未核对」，用户看到一条黄色警告只为提醒他
-   * 那里有个数字。数字本来就该照原样读。
+   * 数字**不能原样留着**：`450` / `540` 是金额，用户需要照着念出来，
+   * 原样返回等于没有近音辅助（实测「更多→中文转外语」的三卡里金额 450/540
+   * 就是裸数字，用户念不出英语读音）。数字读法统一走 `soundForNumberToken`：
+   * 它按英语读法把 450 → 「佛 汉卓德 菲夫提」、4:20 → 「佛 特温提」，
+   * 推不出（订单号太长等）才返回占位，绝不静默省略。
+   *
+   * 只在**汉字近音体系**下用汉字读音；片假名等其它体系要让数字继续落到
+   * 下面的 enToKatakana 规则（它们有自己的数字读法），不能把汉字塞进片假名行。
    */
   if (!/[A-Za-z\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(word)) {
+    if (/\d/.test(word) && target === 'English' && system === 'hanzi') {
+      const sound = soundForNumberToken(word);
+      if (sound) return { hint: sound, unknown: false, approx: true };
+    }
+    // 纯标点（连数字都没有）、或其它体系下的数字：原样保留，交给后面规则。
     return { hint: word, unknown: false };
   }
 

@@ -511,6 +511,21 @@ export function useCopilot() {
       captureGateRef.current,
       lastSessionRef.current,
     );
+    /*
+     * 修复「切记录后字幕永久被拒绝」：渲染层把 floorSession 抬到
+     * lastSeenSession+1，但音频引擎在持续运行时**不会**推进自己的 sessionId
+     * （sessionSeq 只在 start/stop 里 +1）。于是同一音频流之后发出的字幕
+     * 仍带旧 sessionId，被抬高后的 floorSession 永久挡掉 —— 直到用户手动
+     * 停止再重新开始采集，新字幕才会回来。
+     *
+     * 正确做法：若采集仍在运行，就触发一次引擎「重连」（force 重建，内部会
+     * stop → sessionSeq+1 → start），让引擎 sessionId 与渲染层门槛同步 +1。
+     * 这样旧排队包被挡掉，当前新字幕又能继续进来。采集已停止则无需处理。
+     */
+    const liveStatus = useUiStore.getState().status as ListeningStatus;
+    if (isCaptureActive(liveStatus)) {
+      void window.copilot.audioReconnect();
+    }
     const pendingTranslate = [...translateReqRef.current.entries()];
     translateReqRef.current.clear();
     for (const [id, requestId] of pendingTranslate) {

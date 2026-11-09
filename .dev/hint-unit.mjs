@@ -184,9 +184,12 @@ function truthy(label, value, detail = '') {
     `status=${plan.status} unknown=${JSON.stringify(plan.unknown)}`,
   );
   const three = plan.segments.find((s) => s.source === '3');
-  eq('G 数字原样保留', three?.hint, '3');
-  eq('G 数字不算未确定', three?.status, 'ok');
+  // 0.6.3 修复：数字不再「原样保留」，而是给出英语读音 —— 450/540 这种金额
+  // 用户需要照着念出来，裸数字等于没有近音辅助。3 的读法是「斯瑞」(three)。
+  eq('G 数字给英语读音（不再裸数字）', three?.hint, '斯瑞');
+  eq('G 数字读音标近似（规则拼读）', three?.status, 'approx');
 }
+
 
 // --------------------------------------------------------------------------- //
 // I. 缩写按字母名念，不逐字母硬拼成假单词

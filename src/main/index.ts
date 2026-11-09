@@ -33,10 +33,7 @@ import {
 } from './overlay-window';
 import { getSettingsStore } from './settings-store';
 import { describeError, logger } from './logger';
-import {
-  disposeAudio,
-  startAudioPipeline,
-} from './audio/audio-controller';
+import { disposeAudio } from './audio/audio-controller';
 import { pythonAvailability } from './audio/python-engine';
 import { runSystemCheck } from './audio/health-check';
 import {
@@ -698,11 +695,9 @@ if (!gotLock) {
       }, autoCloseMs);
     }
 
-    // Auto-start listening only after the privacy notice has been accepted.
-    const settings = getSettingsStore().get();
-    if (settings.privacyAccepted) {
-      startAudioPipeline(win);
-    }
+    // 默认待机：不再因为「已接受隐私说明」就在启动时自动开始采集。
+    // 采集必须由用户明确点「开始」触发 —— 隐私已同意 ≠ 每次启动都要打开麦克风。
+    // （历史教训：已接受过隐私提示的老用户会在这里被悄悄打开设备。）
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createOverlayWindow();

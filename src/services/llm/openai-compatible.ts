@@ -2,7 +2,7 @@ import type { LLMProvider, ReplyDraft, ReplyRequest } from '../types';
 import { buildReplyMessages } from './prompts';
 import { enrichDrafts } from '../pronunciation';
 import { errorDetailFromText, requestJson, type RequestOptions } from './http';
-import { parseReplyDrafts } from './reply-parse';
+import { parseReplyDrafts, dropWrongLanguageDrafts } from './reply-parse';
 import { checkDomesticURL, normalizeBaseURL } from '../../shared/providers';
 
 export interface OpenAICompatibleConfig {
@@ -179,9 +179,27 @@ export class OpenAICompatibleLLM implements LLMProvider {
     const drafts = parseReplyDrafts(parsed, 3);
     if (!drafts.length) throw new Error('LLM_EMPTY_RESPONSE');
 
+    /*
+     * 目标语言闸门（忠实转译的关键）：模型可能把「转成外语」理解成「用中文解释」，
+     * 于是 english 字段整个是中文 —— 那正是「更多→中文转外语」三卡里的第二条。
+     * 结构校验查不出这种错误（它只是字符串），这里按字系把串了语言的卡整条丢掉，
+     * 宁可少一张卡，也不能让用户照着中文念给对面听。
+     */
+    const language = request.language ?? 'English';
+    const { kept, dropped } = dropWrongLanguageDrafts(drafts, language);
+    if (!kept.length) {
+      // 全被语言闸门拦下：说明这次输出整体语言错了，报一个明确错误让上层重试，
+      // 而不是把一堆错误语言的卡当成可用结果。
+      throw new Error('LLM_WRONG_LANGUAGE');
+    }
+    if (dropped > 0) {
+      // 部分卡语言串了：静默丢弃，界面少一张卡总好过一张错语言卡。
+      // （不在这里打日志，避免把模型返回的正文写进日志。）
+    }
+
     // 提示体系跟着设置走：日语读者要片假名，别给他汉字近音。
     return enrichDrafts(
-      drafts,
+      kept,
       request.language ?? 'English',
       request.hintSystem ?? 'hanzi',
     );
