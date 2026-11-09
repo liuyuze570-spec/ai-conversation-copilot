@@ -38,8 +38,8 @@ from engine_reply import ReplyError, build_reply_chain, choose_reply
 from phrasebook import drop_repeated_tail, looks_degenerate
 from phrasebook import lookup as phrase_lookup
 
-VERSION = "0.7.0-web.5"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
-BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web5-2026-11-09")
+VERSION = "0.7.0-web.6"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
+BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web6-2026-11-09")
 # 每个进程一个短 ID：用来判「请求是不是被不同实例/重启后的进程接走的」。
 # 不含任何用户数据，可以安全地出现在 /api/health 里。
 BOOT_ID = secrets.token_hex(4)
