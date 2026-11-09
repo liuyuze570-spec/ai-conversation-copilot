@@ -36,6 +36,34 @@ class ASRError(Exception):
         self.status = status
 
 
+def _wav_seconds(data: bytes) -> float | None:
+    """直接读 PCM WAV 头算时长，不依赖 PyAV。
+
+    P2 标签页音频捕获在浏览器里切出来的就是 16-bit mono PCM WAV。
+    音频时长预算要按真实秒数扣，所以对这种格式必须能稳定读到时长；
+    PyAV 在某些容器组合上会返回 None，那种情况下也不能「按 0 秒」白嫖。
+    """
+    if len(data) < 44 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return None
+    pos = 12
+    byte_rate = 0
+    data_size: int | None = None
+    while pos + 8 <= len(data):
+        chunk_id = data[pos : pos + 4]
+        size = int.from_bytes(data[pos + 4 : pos + 8], "little")
+        body = pos + 8
+        if chunk_id == b"fmt " and size >= 16 and body + 16 <= len(data):
+            byte_rate = int.from_bytes(data[body + 8 : body + 12], "little")
+        elif chunk_id == b"data":
+            data_size = size
+            break
+        pos = body + size + (size & 1)
+    if data_size is None or byte_rate <= 0:
+        return None
+    seconds = data_size / byte_rate
+    return seconds if seconds > 0 else None
+
+
 def probe_seconds(data: bytes, suffix: str) -> float | None:
     """
     只读时长，不解码音频。
@@ -46,9 +74,14 @@ def probe_seconds(data: bytes, suffix: str) -> float | None:
     「录音超过 60 秒」。公网上这等于给了一个免费的算力放大器：
     谁都可以反复传长录音把机器占满。
 
+    WAV 直接读头（见 `_wav_seconds`）；其它格式交给 PyAV。
     探不出来（老格式、损坏文件）返回 None，交给后面的流程自己报错，
     不在这里猜一个时长出来。
     """
+    if suffix.lower() == ".wav":
+        exact = _wav_seconds(data)
+        if exact is not None:
+            return exact
     try:
         import av  # faster-whisper 的依赖，已在 requirements 里锁定版本
 

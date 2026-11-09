@@ -34,6 +34,11 @@ export interface HealthLimits {
   max_audio_seconds: number;
   quota_translate: number;
   quota_transcribe: number;
+  /** P2 持续字幕：音频秒数预算 / 单片上限 / 识别并发 / 每分钟频率。 */
+  audio_budget_seconds?: number;
+  segment_max_seconds?: number;
+  asr_concurrency?: number;
+  rate_per_min?: number;
 }
 
 export interface Health {
@@ -93,6 +98,9 @@ export interface TranscribeResult {
   language: string;
   elapsed_ms: number;
   duration_seconds: number | null;
+  /** 持续字幕：片段顺序号与剩余音频秒数预算。 */
+  seq?: number;
+  audio_budget_left_seconds?: number | null;
 }
 
 export interface ReplySuggestion {
@@ -267,6 +275,32 @@ export async function transcribe(
   const form = new FormData();
   form.append('audio', blob, filename);
   form.append('language', 'en');
+  const response = await fetch(url('/api/transcribe'), {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: sessionHeaders(),
+    body: form,
+    signal,
+  });
+  return json<TranscribeResult>(response);
+}
+
+/**
+ * 持续字幕的短切片识别。与 `transcribe()` 的区别是显式 `segment=1` + 顺序号：
+ * 服务端按音频秒数预算计费、限制并发，日志能按 seq 排查积压，
+ * 但**不会**为每个片段生成回复建议（回复由使用者选中某句后再生成）。
+ */
+export async function transcribeSegment(
+  wav: Blob,
+  seq: number,
+  signal?: AbortSignal,
+  language: string = 'en',
+): Promise<TranscribeResult> {
+  const form = new FormData();
+  form.append('audio', wav, `segment-${seq}.wav`);
+  form.append('language', language);
+  form.append('segment', '1');
+  form.append('seq', String(seq));
   const response = await fetch(url('/api/transcribe'), {
     method: 'POST',
     credentials: 'same-origin',

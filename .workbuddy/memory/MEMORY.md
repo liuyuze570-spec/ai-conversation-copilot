@@ -86,3 +86,10 @@ status 三态 ok/approx/unknown；界面用文字「规则近似 N 段」+虚点
 4. **反馈是真 SQLite 文件库**（`feedback_store.py`）：1000 字按 Unicode 码点前后端同源（config 下发）；编号+一次性凭证（只存 SHA-256）；状态只能由带 admin token 的 PATCH 推进，前端无入口 → 未配置时永远「已收到」。路由必须注册在 `/{path:path}` 之前。
 主题：三套色靠 `body[data-theme]` + CSS 变量覆盖 Tailwind 类（作用域 `#root`）；跟随系统要在切到 system 时**重新读并校准** `systemPrefersDark()` 快照，否则 change 值相同被 React 跳过。
 **版本纪律**：线上仍是 web.7（用户未明确要求发布 → 不覆盖 live link）；`stable-web.7` 标签 + 回退预案（未演练）；版本号发布前必升。P2/P3/P4、真实用户试用、讲述人实读、线上持久化验证全部未完成，见 `docs/P2-P4-未完成清单与验收前置.md`。
+
+### 0.7.0-web.9 P2 首版不变量（本地 8901，未发布）
+1. **持续字幕按秒计费**：300 秒音频预算 + 单片 ≤10s + `ASR_GATE` 并发 1 + 90 次/分；`_wav_seconds()` 读 RIFF 头，探测失败按上限扣（不能白嫖）；`segment=1` 走新预算，手动整段录音仍用旧次数配额。whisper 同步调用必须 `run_in_threadpool`。
+2. **捕获不变量**：`getDisplayMedia({video,audio})` 后**必须**查 `getAudioTracks().length`；无音轨明确报错、**绝不退回麦克风**；video 轨只维持会话，不接元素/不取帧/不上传；worklet 输出接 `gain=0` 防朗读回环；停止 abort + 清队列 + stop 全部轨道 + close AudioContext。
+3. **不造字**：静音片不上传、界面「等待声音 · 不会生成字幕」；去重/断句纯函数放 `src/shared/caption-pipeline.ts` 供 Node 单测；`p.m.` 规范化成两词，重叠裁剪要按规范化词数映射回原始词边界；句末 `900.` 必须能断句。片段只识别+翻译，**不调 `/api/reply`**。
+4. **诚实边界**：本轮演示音频是 SAPI 合成语音经真实 MediaStream 注入的下游链路（非视频原声）；真人点选标签页、四平台、跨网页悬浮字幕**全未验证**；固定 3s 硬切片切在句中导致 `4:15→4.50 p.m.` 等真实识别误差，P2 只证明链路跑通，不证明翻译正确。
+`git tag stable-web.8` → `35c385a`；8899 保留 web.8 完整副本、8901 跑 web.9、公网 web.7，三者并存便于回退。测试：单测 18 套 + 服务端 38 条 + `p2-verify.mjs` 52 项 + P0/P1 回归全过；报告第 16 节与 `docs/翻译其他网页视频-P2演示与兼容表.md`。

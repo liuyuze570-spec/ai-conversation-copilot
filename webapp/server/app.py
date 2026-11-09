@@ -29,6 +29,7 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from engine_asr import ASRError, build_asr_chain, choose_asr, probe_seconds
@@ -51,8 +52,8 @@ from feedback_store import (
     char_count,
 )
 
-VERSION = "0.7.0-web.8"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
-BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web8-2026-11-09")
+VERSION = "0.7.0-web.9"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
+BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web9-2026-11-09")
 # 每个进程一个短 ID：用来判「请求是不是被不同实例/重启后的进程接走的」。
 # 不含任何用户数据，可以安全地出现在 /api/health 里。
 BOOT_ID = secrets.token_hex(4)
@@ -66,7 +67,15 @@ QUOTA_TRANSCRIBE = int(os.getenv("COPILOT_QUOTA_TRANSCRIBE", "10"))
 # 若只给 15 次，用户翻到一半就没有回复建议了 —— 那是核心功能，不是附加项。
 QUOTA_REPLY = int(os.getenv("COPILOT_QUOTA_REPLY", "40"))
 SESSION_TTL = int(os.getenv("COPILOT_SESSION_TTL", "7200"))
-RATE_PER_MIN = int(os.getenv("COPILOT_RATE_PER_MIN", "30"))
+# 持续字幕（授权标签页音频捕获）每 3 秒一片。旧版 30 次/分 是给「手动点一次」
+# 设计的，识别 + 翻译两路一叠加就撞墙；改成频率 + 音频秒数预算 + 并发三层控制。
+RATE_PER_MIN = int(os.getenv("COPILOT_RATE_PER_MIN", "90"))
+AUDIO_BUDGET_SECONDS = float(os.getenv("COPILOT_AUDIO_BUDGET_SECONDS", "300"))
+SEGMENT_MAX_SECONDS = float(os.getenv("COPILOT_SEGMENT_MAX_SECONDS", "10"))
+ASR_CONCURRENCY = max(1, int(os.getenv("COPILOT_ASR_CONCURRENCY", "1")))
+#: faster-whisper 是 CPU 密集的同步调用，必须放线程池并限并发，
+#: 否则多个 3 秒片段会同时吃满 CPU，还会把事件循环堵住。
+ASR_GATE = threading.BoundedSemaphore(ASR_CONCURRENCY)
 REAL_DISABLED = os.getenv("COPILOT_REAL_DISABLED") == "1"
 
 # 反馈库是**文件**，不是内存字典：进程重启后仍可按编号查到。
@@ -111,6 +120,8 @@ class Session:
     translate_left: int
     transcribe_left: int
     reply_left: int
+    #: 持续字幕按「送进去的音频秒数」扣，不按请求次数扣。
+    audio_seconds_left: float = AUDIO_BUDGET_SECONDS
 
 
 @dataclass
@@ -128,7 +139,9 @@ class Store:
     def new_session(self) -> Session:
         with self.lock:
             sid = secrets.token_urlsafe(18)
-            session = Session(sid, time.time(), QUOTA_TRANSLATE, QUOTA_TRANSCRIBE, QUOTA_REPLY)
+            session = Session(
+                sid, time.time(), QUOTA_TRANSLATE, QUOTA_TRANSCRIBE, QUOTA_REPLY, AUDIO_BUDGET_SECONDS
+            )
             self.sessions[sid] = session
             return session
 
@@ -174,6 +187,17 @@ class Store:
             else:
                 return False
             return True
+
+    def spend_audio_seconds(self, session: Session, seconds: float) -> tuple[bool, float]:
+        """持续字幕的预算：按真实音频秒数扣，返回 (是否放行, 剩余秒数)。
+
+        探不出时长时上层按片段上限扣，避免「探测失败 = 免费无限用」。
+        """
+        with self.lock:
+            if seconds <= 0 or session.audio_seconds_left < seconds:
+                return False, max(0.0, session.audio_seconds_left)
+            session.audio_seconds_left -= seconds
+            return True, max(0.0, session.audio_seconds_left)
 
     def rate_ok(self, ip: str) -> bool:
         now = time.time()
@@ -453,6 +477,11 @@ def health() -> dict:
             "quota_translate": QUOTA_TRANSLATE,
             "quota_transcribe": QUOTA_TRANSCRIBE,
             "quota_reply": QUOTA_REPLY,
+            # P2：持续字幕的三层限制（音频秒数 / 单片上限 / 并发 / 频率）。
+            "audio_budget_seconds": AUDIO_BUDGET_SECONDS,
+            "segment_max_seconds": SEGMENT_MAX_SECONDS,
+            "asr_concurrency": ASR_CONCURRENCY,
+            "rate_per_min": RATE_PER_MIN,
         },
         # 只为排查「会话为什么丢」：进程标识、运行时长、在线会话数。
         # 不含 sid、密钥、任何正文。
@@ -504,6 +533,7 @@ def new_session(request: Request) -> JSONResponse:
                 "translate": QUOTA_TRANSLATE,
                 "transcribe": QUOTA_TRANSCRIBE,
                 "reply": QUOTA_REPLY,
+                "audio_seconds": AUDIO_BUDGET_SECONDS,
             },
         }
     )
@@ -659,7 +689,12 @@ async def transcribe(
     request: Request,
     audio: UploadFile = File(...),
     language: str = Form("en"),
+    # P2：持续字幕的短片段走 segment=1。它与「手动传一整段录音」是两种计费口径：
+    # 前者按音频秒数预算，后者仍按原来的次数配额，避免把旧行为改坏。
+    segment: str = Form("0"),
+    seq: int = Form(0),
 ) -> JSONResponse:
+    is_segment = segment == "1"
     session = require_session(request)
     if isinstance(session, JSONResponse):
         return session
@@ -677,41 +712,67 @@ async def transcribe(
         return error(request, "UNSUPPORTED_AUDIO", 415, "不支持的音频格式")
 
     # 先探时长再推理：否则长录音会先把 CPU 吃满，然后才被拒绝。
+    hard_limit = SEGMENT_MAX_SECONDS if is_segment else MAX_AUDIO_SECONDS
     probed = probe_seconds(data, suffix)
-    if probed is not None and probed > MAX_AUDIO_SECONDS:
-        return error(request, "TOO_LARGE", 413, f"录音超过 {MAX_AUDIO_SECONDS} 秒")
+    if probed is not None and probed > hard_limit:
+        return error(
+            request,
+            "SEGMENT_TOO_LONG" if is_segment else "TOO_LARGE",
+            413,
+            f"音频超过 {hard_limit:g} 秒",
+        )
 
-    if not STORE.spend(session, "transcribe"):
-        return error(request, "QUOTA_EXCEEDED", 429, "本次会话的识别次数用完了")
+    if is_segment:
+        # 探不出时长时按片段上限扣，绝不能让「探测失败」变成免费无限识别。
+        charge = probed if probed is not None else hard_limit
+        allowed, budget_left = STORE.spend_audio_seconds(session, charge)
+        if not allowed:
+            return error(request, "AUDIO_BUDGET_EXCEEDED", 429, "本次会话的音频时长预算用完了")
+    else:
+        if not STORE.spend(session, "transcribe"):
+            return error(request, "QUOTA_EXCEEDED", 429, "本次会话的识别次数用完了")
+        budget_left = session.audio_seconds_left
 
     backend = backend_or_none(ASR_CHAIN)
     if backend is None:
         return error(request, "NOT_CONFIGURED", 503, "服务端没有可用的识别能力")
+
+    def run() -> object:
+        # CPU 密集的 whisper 放线程池；并发闸保证不会被多个片段同时打满。
+        with ASR_GATE:
+            return backend.transcribe(data, suffix, language)  # type: ignore[attr-defined]
+
     try:
-        result = backend.transcribe(data, suffix, language)  # type: ignore[attr-defined]
+        result = await run_in_threadpool(run)
     except ASRError as failure:
         mark_runtime("transcribe", failure.code)
         return error(request, failure.code, failure.status, "识别失败")
     # 探测失败（拿不到时长）时，这里再兜一次底。
-    if result.duration_seconds and result.duration_seconds > MAX_AUDIO_SECONDS:
-        return error(request, "TOO_LARGE", 413, f"录音超过 {MAX_AUDIO_SECONDS} 秒")
+    if result.duration_seconds and result.duration_seconds > hard_limit:  # type: ignore[attr-defined]
+        return error(request, "TOO_LARGE", 413, f"录音超过 {hard_limit:g} 秒")
     mark_runtime("transcribe")
     STORE.bump("transcribe")
     LOG.info(
-        "transcribe id=%s mode=%s bytes=%d ms=%d",
+        "transcribe id=%s mode=%s segment=%s seq=%d bytes=%d seconds=%.2f budget_left=%.1f ms=%d",
         request.state.request_id,
-        result.mode,
+        result.mode,  # type: ignore[attr-defined]
+        "1" if is_segment else "0",
+        seq,
         len(data),
-        result.elapsed_ms,
+        probed or 0.0,
+        budget_left,
+        result.elapsed_ms,  # type: ignore[attr-defined]
     )
     return JSONResponse(
         {
             "request_id": request.state.request_id,
-            "text": result.text,
-            "mode": result.mode,
-            "language": result.language,
-            "duration_seconds": result.duration_seconds,
-            "elapsed_ms": result.elapsed_ms,
+            "text": result.text,  # type: ignore[attr-defined]
+            "mode": result.mode,  # type: ignore[attr-defined]
+            "language": result.language,  # type: ignore[attr-defined]
+            "duration_seconds": result.duration_seconds,  # type: ignore[attr-defined]
+            "elapsed_ms": result.elapsed_ms,  # type: ignore[attr-defined]
+            "seq": seq,
+            "audio_budget_left_seconds": round(budget_left, 2),
         }
     )
 

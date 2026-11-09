@@ -22,6 +22,7 @@ import type { PlannedReply } from '@shared/reply-plan';
 import { REPLY_SOURCE_NOTE } from '@shared/reply-plan';
 import { ReplyCards } from './ReplyCards';
 import { FeedbackPanel, type FeedbackContext } from './FeedbackPanel';
+import { TabAudioPanel } from './TabAudioPanel';
 import {
   applyTheme,
   readThemePref,
@@ -912,13 +913,17 @@ export function App() {
         />
       ) : null}
 
+      {/* P2：授权标签页音频捕获。放在主流程之后，不挤占「看懂→核对→回复」。 */}
+      <TabAudioPanel />
+
       <footer className="mt-6 text-[11.5px] leading-relaxed text-white/40">
         <p>
           字幕、录音和会话只在服务端内存里处理，重启即清；反馈单独写进数据库（见「反馈」）。
           模型与接收方见「设置—隐私与数据」。
         </p>
         <p className="mt-1">
-          重点信息由规则提取，可能与原话有出入；确认句请当面再核一遍。网页不做 Windows 系统声音采集，那条链路由桌面客户端负责。
+          重点信息由规则提取，可能与原话有出入；确认句请当面再核一遍。网页不做 Windows 系统声音采集，
+          那条链路由桌面客户端负责；网页的「翻译其他网页视频」只在你主动授权的标签页音频上工作。
         </p>
         <button
           type="button"

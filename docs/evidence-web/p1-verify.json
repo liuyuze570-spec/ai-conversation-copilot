@@ -1,5 +1,5 @@
 {
-  "base": "http://127.0.0.1:8899",
+  "base": "http://127.0.0.1:8901",
   "steps": [
     {
       "name": "N1 主导航四项齐全",
@@ -315,7 +315,7 @@
     {
       "name": "F-receipt",
       "data": {
-        "ticket": "FB-20261109-DD5958",
+        "ticket": "FB-20261109-2ACCA1",
         "status": "已收到"
       }
     },
