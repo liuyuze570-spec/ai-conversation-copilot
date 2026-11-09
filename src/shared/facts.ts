@@ -20,6 +20,8 @@
  * （人名、组织、事项、负责人）。
  */
 
+import { scanNumbers, toChineseSpeech } from './numeric-check';
+
 export const FACT_KINDS = [
   'time',
   'date',
@@ -260,6 +262,14 @@ const MONEY_PATTERNS: RegExp[] = [
    * 就这样整条空掉）。带千分位的写法几乎不可能是别的东西，直接按金额算。
    */
   /\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b/g,
+  /*
+   * 空格千分位：`12 000` / `1 250 000`。
+   *
+   * 中文译文里这个写法很常见（实测本地翻译就输出 `预算为12 000`），
+   * 而旧规则只认逗号，于是译文侧的当前值整个提不出来 —— 合并之后
+   * 「一万二」这条事实就凭空消失了。
+   */
+  /\b\d{1,3}(?:[\s\u00A0\u202F]\d{3})+(?:\.\d+)?\b/g,
 ];
 
 /** 数量（不含金额）：个 / 份 / people / pages… */
@@ -447,6 +457,19 @@ export function extractFactsWithRules(item: {
  *
  * 只在同类事实数量对得上时才配对；多出来的原样保留，绝不硬凑。
  */
+/**
+ * 事实值里的数值，用来做跨语言配对。
+ *
+ * `twelve thousand` 与 `12 000` 都读成 12000，`2万` 读成 20000 —— 靠它
+ * 才能把「同一笔钱的中英两种写法」认成一条，而不是两条。
+ * 读不出数值（`Friday` / `下午2点`）返回 null，交给上层退回顺序配对。
+ */
+function numericKeyOf(value: string): number | null {
+  const hits = scanNumbers(value);
+  if (hits.length !== 1) return null;
+  return hits[0].value;
+}
+
 function mergeBilingual(drafts: FactDraft[]): FactDraft[] {
   const byKind = new Map<FactKind, { zh: FactDraft[]; src: FactDraft[] }>();
   for (const draft of drafts) {
@@ -462,10 +485,29 @@ function mergeBilingual(drafts: FactDraft[]): FactDraft[] {
   const merged = new Map<FactDraft, FactDraft>();
   const consumed = new Set<FactDraft>();
   for (const bucket of byKind.values()) {
-    const pairs = Math.min(bucket.zh.length, bucket.src.length);
-    for (let index = 0; index < pairs; index += 1) {
-      const zh = bucket.zh[index];
-      const src = bucket.src[index];
+    const usedSrc = new Set<number>();
+    for (const zh of bucket.zh) {
+      /*
+       * 按**数值**配对，不按数组下标。
+       *
+       * 按下标配对时，只要两侧条数不一样，配对就会整体错位：
+       * 实测公网译文 `预算为12 000,而不是2万` 里空格千分位没被识别，
+       * 译文侧只剩 `2万` 一条，于是它被配给了原文的 `twelve thousand` ——
+       * 卡上「2万」的原话写成「twelve thousand」，而真正的当前值
+       * 「一万二」整条消失。用户照着这张卡核对，会确认错的数。
+       */
+      const zhNum = numericKeyOf(zh.value);
+      let matchIndex = -1;
+      if (zhNum != null) {
+        matchIndex = bucket.src.findIndex(
+          (candidate, index) => !usedSrc.has(index) && numericKeyOf(candidate.value) === zhNum,
+        );
+      }
+      // 数值对不上（时间/日期的文字写法）就退回「第一个还没被用掉的」。
+      if (matchIndex < 0) matchIndex = bucket.src.findIndex((_, index) => !usedSrc.has(index));
+      if (matchIndex < 0) continue;
+      usedSrc.add(matchIndex);
+      const src = bucket.src[matchIndex];
       /*
        * 否定信息**两边都要看**。
        *
@@ -655,17 +697,39 @@ function zhNumber(token: string): number | null {
  * 比较，用户把 15000 改成 16000 时「有没有新增数字」的检查形同虚设。
  */
 export function valueNumbers(text: string): number[] {
+  if (!text) return [];
+  /*
+   * 复用统一扫描器（numeric-check），不再自己写一套正则。
+   *
+   * 旧实现只认 `\d[\d,]*`：
+   *  - `12 000`（空格分千位）被切成 12 和 0 两个数；
+   *  - `twelve thousand` 一个都读不出来。
+   * 结果确认句明明是 `Just to confirm, twelve thousand…`，校验却判
+   * 「这句话里没有你改后的数值（12、0）」直接拒绝出句 —— 用户卡在
+   * 最后一步，前面核对得再对也没用。
+   *
+   * 统一之后：空格 / 逗号千分位、英文数词、中文「万 / 千」读出来是同一个数。
+   */
+  return scanNumbers(text).map((hit) => Math.round(hit.value * 1e6) / 1e6);
+}
+
+/**
+ * 数值的「读法展开」。
+ *
+ * `4.15 p.m.` 在英文里是时间（4 点 15 分），`valueNumbers` 读成一个 4.15；
+ * 中文读法「下午4点15分」读成 4 和 15。两边比较前都按时间拆开，否则中文
+ * 释义一替换就被判「释义和数值对不上」，功能反而倒退。
+ */
+function expandedNumbers(text: string): number[] {
   const out: number[] = [];
-  if (!text) return out;
-  const re = /(\d[\d,]*(?:\.\d+)?)\s*(亿|万|千)?/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(text))) {
-    let value = Number(match[1].replace(/,/g, ''));
-    if (!Number.isFinite(value)) continue;
-    if (match[2] === '亿') value *= 1e8;
-    else if (match[2] === '万') value *= 1e4;
-    else if (match[2] === '千') value *= 1e3;
-    out.push(Math.round(value * 1e6) / 1e6);
+  for (const n of valueNumbers(text)) {
+    if (!Number.isInteger(n) && n > 0 && n < 24) {
+      const hour = Math.floor(n);
+      const minute = Math.round((n - hour) * 100);
+      out.push(hour, minute);
+    } else {
+      out.push(n);
+    }
   }
   return out;
 }
@@ -986,8 +1050,16 @@ export function checkSentenceAgainstFacts(
     return { ok: false, message: '这句话里还留着你改之前的星期，已拦下' };
   }
 
-  const meaningNumbers = new Set(valueNumbers(meaning));
-  const meaningMissing = [...required].filter((number) => !meaningNumbers.has(number));
+  /*
+   * 释义现在可能是中文读法（`一万二千` / `下午4点`），数值仍要能对上。
+   * 比较前两边都做「读法展开」，避免 4.15 与 4 点 15 分被判成不同的数。
+   */
+  const meaningNumbers = new Set(expandedNumbers(meaning));
+  const needForMeaning = new Set<number>();
+  for (const fact of facts) {
+    for (const number of expandedNumbers(fact.value)) needForMeaning.add(number);
+  }
+  const meaningMissing = [...needForMeaning].filter((number) => !meaningNumbers.has(number));
   if (meaningMissing.length) {
     return { ok: false, message: '释义和改后的数值对不上，已拦下' };
   }
@@ -1029,6 +1101,12 @@ export function planConfirmSentence(
   const blocked: SpokenBlocked[] = [];
   const spoken: string[] = [];
   const understood: string[] = [];
+  /*
+   * 释义是给中文使用者自己看的。原话是 `twelve thousand` / `3 p.m.` 时，
+   * 直接把英文抄进「我理解的是…」等于没翻译 —— 他卡住的就是这一句。
+   * 只对封闭集合（金额 / 时间 / 星期 / 相对日期）做口语化，其余保持原值。
+   */
+  const wantChinese = comprehension === 'Chinese' || comprehension === 'zh' || comprehension === 'zh-CN';
   for (const fact of current.slice(0, 4)) {
     const derived = deriveSpoken(fact, targetLanguage);
     if (!derived.ok) {
@@ -1042,7 +1120,21 @@ export function planConfirmSentence(
       continue;
     }
     if (!spoken.includes(derived.text)) spoken.push(derived.text);
-    if (!understood.includes(fact.value.trim())) understood.push(fact.value.trim());
+    const raw = fact.value.trim();
+    /*
+     * 只在「值里带英文字母」时才口语化：`twelve thousand` / `3 p.m.` /
+     * `next Monday` 直接塞进中文句子，用户读不下去；而 `16000美元`、
+     * `一万五千元` 本来就是中文写法，再转成「一万六千」反而更难扫。
+     * 转完还剩英文字母（例如 `15,000 dollars`）就整条放弃，不半英半中。
+     */
+    const zhSource = wantChinese && /[A-Za-z]/.test(raw);
+    const zh = zhSource ? toChineseSpeech(raw) : '';
+    const chineseOnly = zh !== '' && !/[A-Za-z]/.test(zh);
+    // 口语化不能丢数值：读出来的数必须和卡片上的值是同一批数
+    const keepsNumbers =
+      chineseOnly && expandedNumbers(raw).every((n) => expandedNumbers(zh).includes(n));
+    const forMeaning = keepsNumbers ? zh : raw;
+    if (!understood.includes(forMeaning)) understood.push(forMeaning);
   }
 
   if (blocked.length) {

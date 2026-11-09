@@ -30,9 +30,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from engine_asr import ASRError, build_asr_chain, choose_asr
+from engine_asr import ASRError, build_asr_chain, choose_asr, probe_seconds
 from engine_mt import UpstreamError, build_mt_chain, choose_mt
-from engine_reply import build_reply_chain, choose_reply
+from engine_reply import ReplyError, build_reply_chain, choose_reply
 
 VERSION = "0.7.0-web.1"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
 MAX_CHARS = int(os.getenv("COPILOT_MAX_CHARS", "2000"))
@@ -40,6 +40,7 @@ MAX_AUDIO_MB = float(os.getenv("COPILOT_MAX_AUDIO_MB", "8"))
 MAX_AUDIO_SECONDS = int(os.getenv("COPILOT_MAX_AUDIO_SECONDS", "60"))
 QUOTA_TRANSLATE = int(os.getenv("COPILOT_QUOTA_TRANSLATE", "40"))
 QUOTA_TRANSCRIBE = int(os.getenv("COPILOT_QUOTA_TRANSCRIBE", "10"))
+QUOTA_REPLY = int(os.getenv("COPILOT_QUOTA_REPLY", "15"))
 SESSION_TTL = int(os.getenv("COPILOT_SESSION_TTL", "7200"))
 RATE_PER_MIN = int(os.getenv("COPILOT_RATE_PER_MIN", "30"))
 REAL_DISABLED = os.getenv("COPILOT_REAL_DISABLED") == "1"
@@ -74,6 +75,7 @@ class Session:
     created: float
     translate_left: int
     transcribe_left: int
+    reply_left: int
 
 
 @dataclass
@@ -91,7 +93,7 @@ class Store:
     def new_session(self) -> Session:
         with self.lock:
             sid = secrets.token_urlsafe(18)
-            session = Session(sid, time.time(), QUOTA_TRANSLATE, QUOTA_TRANSCRIBE)
+            session = Session(sid, time.time(), QUOTA_TRANSLATE, QUOTA_TRANSCRIBE, QUOTA_REPLY)
             self.sessions[sid] = session
             return session
 
@@ -109,14 +111,22 @@ class Store:
 
     def spend(self, session: Session, kind: str) -> bool:
         with self.lock:
+            # 三类各自记额度。旧实现在 else 里一律扣识别额度，
+            # 于是调用 reply 会悄悄吃掉识别次数。
             if kind == "translate":
                 if session.translate_left <= 0:
                     return False
                 session.translate_left -= 1
-            else:
+            elif kind == "transcribe":
                 if session.transcribe_left <= 0:
                     return False
                 session.transcribe_left -= 1
+            elif kind == "reply":
+                if session.reply_left <= 0:
+                    return False
+                session.reply_left -= 1
+            else:
+                return False
             return True
 
     def rate_ok(self, ip: str) -> bool:
@@ -266,6 +276,7 @@ def health() -> dict:
             "max_audio_seconds": MAX_AUDIO_SECONDS,
             "quota_translate": QUOTA_TRANSLATE,
             "quota_transcribe": QUOTA_TRANSCRIBE,
+            "quota_reply": QUOTA_REPLY,
         },
         "notes": notes,
     }
@@ -365,6 +376,11 @@ async def transcribe(
     if suffix.lower() not in {".webm", ".wav", ".mp3", ".m4a", ".mp4", ".ogg", ".opus", ".flac"}:
         return error(request, "UNSUPPORTED_AUDIO", 415, "不支持的音频格式")
 
+    # 先探时长再推理：否则长录音会先把 CPU 吃满，然后才被拒绝。
+    probed = probe_seconds(data, suffix)
+    if probed is not None and probed > MAX_AUDIO_SECONDS:
+        return error(request, "TOO_LARGE", 413, f"录音超过 {MAX_AUDIO_SECONDS} 秒")
+
     if not STORE.spend(session, "transcribe"):
         return error(request, "QUOTA_EXCEEDED", 429, "本次会话的识别次数用完了")
 
@@ -375,6 +391,7 @@ async def transcribe(
         result = backend.transcribe(data, suffix, language)  # type: ignore[attr-defined]
     except ASRError as failure:
         return error(request, failure.code, failure.status, "识别失败")
+    # 探测失败（拿不到时长）时，这里再兜一次底。
     if result.duration_seconds and result.duration_seconds > MAX_AUDIO_SECONDS:
         return error(request, "TOO_LARGE", 413, f"录音超过 {MAX_AUDIO_SECONDS} 秒")
     STORE.bump("transcribe")
@@ -408,16 +425,25 @@ def reply(request: Request, body: ReplyBody) -> JSONResponse:
     session = require_session(request)
     if isinstance(session, JSONResponse):
         return session
+    if not STORE.rate_ok(request.client.host if request.client else "unknown"):
+        return error(request, "RATE_LIMITED", 429, "请求太频繁")
     if not body.text.strip():
         return error(request, "BAD_REQUEST", 400, "没有原文")
+    # 回复接口和翻译一样要限长：它同样把文本丢给模型，同样要花钱。
     if len(body.text) > MAX_CHARS:
         return error(request, "TOO_LARGE", 413, "文本太长")
+    if len(body.translation) > MAX_CHARS:
+        return error(request, "TOO_LARGE", 413, "译文太长")
+    if not STORE.spend(session, "reply"):
+        return error(request, "QUOTA_EXCEEDED", 429, "本次会话的回复次数用完了")
     backend = backend_or_none(REPLY_CHAIN)
     if backend is None:
         return error(request, "NOT_CONFIGURED", 503, "服务端没有可用的回复能力")
     try:
         result = backend.reply(body.text, body.translation)  # type: ignore[attr-defined]
-    except UpstreamError as failure:
+    except (UpstreamError, ReplyError) as failure:
+        # 两套后端抛的异常类型不一样：ProviderReply 抛 ReplyError，
+        # 旧代码只捕 UpstreamError，于是「上游超时」会变成 500 未捕获异常。
         return error(request, failure.code, failure.status, "回复建议失败")
     STORE.bump("reply")
     return JSONResponse(
@@ -441,7 +467,26 @@ def stats() -> dict:
 # 静态站点：同一个进程同时提供前端（单端口部署，省掉跨域与额外托管）
 # --------------------------------------------------------------------------- #
 
-WEB_DIST = Path(os.getenv("COPILOT_WEB_DIST", Path(__file__).resolve().parent.parent / "web" / "dist"))
+def _resolve_web_dist() -> Path:
+    """
+    前端产物目录。按候选顺序找，不写死一个路径。
+
+    发布平台的打包会**排除 build output**（`dist/` 是典型目标），于是
+    `web/dist` 可能在部署包里整个消失、前端变空白。所以部署包里改用
+    `web/app`，这里两个名字都认。
+    """
+    env = os.getenv("COPILOT_WEB_DIST")
+    if env:
+        return Path(env)
+    here = Path(__file__).resolve().parent
+    for rel in ("../web/dist", "../web/app", "static", "../static"):
+        candidate = (here / rel).resolve()
+        if (candidate / "index.html").is_file():
+            return candidate
+    return (here / "../web/dist").resolve()
+
+
+WEB_DIST = _resolve_web_dist()
 
 
 @app.get("/", response_model=None)
@@ -454,8 +499,12 @@ def index():
 
 @app.get("/{path:path}", response_model=None)
 def static_files(path: str):
-    candidate = (WEB_DIST / path).resolve()
-    if WEB_DIST.exists() and str(candidate).startswith(str(WEB_DIST.resolve())) and candidate.is_file():
+    root = WEB_DIST.resolve()
+    candidate = (root / path).resolve()
+    # `str(...).startswith(str(root))` 会把 `/srv/web-dist-evil/x` 也判成合法
+    # （前缀相同）。改用真正的路径包含关系，并顺带挡掉符号链接逃逸。
+    inside = candidate == root or root in candidate.parents
+    if WEB_DIST.exists() and inside and candidate.is_file():
         return FileResponse(candidate)
     fallback = WEB_DIST / "index.html"
     if fallback.exists():

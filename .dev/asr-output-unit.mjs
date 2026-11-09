@@ -102,6 +102,66 @@ check('E2 1万5千 / 5万', factsOf('预算是1万5千，不是5万。').map((f)
  */
 check('E3 纯汉字数字仍不提取（已知限制）', factsOf('预算是一万五千，不是五万。').map((f) => f.kind), []);
 
+/* ------------------------------------------------------------------ */
+/* F. 中英合并：按数值配对，不按数组下标                                  */
+/* ------------------------------------------------------------------ */
+/*
+ * 实测缺陷（2026-11-09）：公网译文 `预算为12 000,而不是2万` 里
+ * `12 000` 用空格分千位，旧金额规则只认逗号 → 译文侧只剩 `2万` 一条，
+ * 于是它被配给了原文的 `twelve thousand`：
+ *   - 卡上「2万」的原话写成「twelve thousand」（来源错配）
+ *   - 真正的当前值「一万二」整条消失
+ * 用户照着这张卡核对，会确认一个错的数。
+ */
+{
+  const src =
+    'Please move the meeting to Friday at 2 p.m. The budget is twelve thousand, not twenty thousand.';
+  const facts = extractFactsWithRules({
+    originalText: src,
+    translatedText: '请将会议移至星期五下午2时。 预算为12 000,而不是2万。',
+  });
+  const money = facts.filter((f) => f.kind === 'money');
+
+  check('F1 空格千分位被识别为金额', money.length, 2);
+  check(
+    'F2 当前值一万二在卡上',
+    money.filter((f) => !f.negated).map((f) => f.value),
+    ['12 000'],
+  );
+  check(
+    'F3 被否定的两万',
+    money.filter((f) => f.negated).map((f) => f.value),
+    ['2万'],
+  );
+  // 来源必须对上：两万的原文是 twenty thousand，不是 twelve thousand
+  check(
+    'F4 来源不错配',
+    money.filter((f) => f.negated).map((f) => f.sourceText),
+    ['twenty thousand'],
+  );
+  check(
+    'F5 当前值来源正确',
+    money.filter((f) => !f.negated).map((f) => f.sourceText),
+    ['twelve thousand'],
+  );
+}
+
+// F6 逗号千分位也必须仍然工作（回归）
+{
+  const facts = extractFactsWithRules({
+    originalText: 'The budget is twelve thousand, not twenty thousand.',
+    translatedText: '预算为12,000，而不是20,000。',
+  });
+  check(
+    'F6 逗号千分位',
+    facts.filter((f) => f.kind === 'money').map((f) => [f.value, Boolean(f.negated)]),
+    [
+      ['12,000', false],
+      ['20,000', true],
+    ],
+  );
+}
+
 console.log(`\n通过 ${pass} 条，失败 ${fail} 条`);
 if (fail > 0) {
   process.exitCode = 1;

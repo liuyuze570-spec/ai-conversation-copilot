@@ -19,6 +19,7 @@ import {
   type FactRow,
 } from './lib/pipeline';
 import type { ConfirmPlan } from '@shared/facts';
+import { checkNumericConsistency, type NumericCheck } from '@shared/numeric-check';
 
 export type Stage = 'idle' | 'translating' | 'transcribing' | 'replying';
 export type SourceKind = 'text' | 'mic' | 'file' | 'preset';
@@ -43,6 +44,13 @@ interface State {
   requestId: string | null;
   facts: FactRow[];
   plan: ConfirmPlan | null;
+  /**
+   * 原文与译文的关键信息比对结果。
+   *
+   * 不是「翻译质量评分」：只查数字、时间、星期、否定这四类会直接害人的东西。
+   * `warn` 时界面必须显著提示「按原文核对」，而不是让用户默认译文可信。
+   */
+  numericCheck: NumericCheck | null;
   replyText: string;
   replyMode: TranslateMode | null;
   version: number;
@@ -115,6 +123,7 @@ export const useApp = create<State>((set, get) => ({
   requestId: null,
   facts: [],
   plan: null,
+  numericCheck: null,
   replyText: '',
   replyMode: null,
   version: 0,
@@ -147,6 +156,7 @@ export const useApp = create<State>((set, get) => ({
       requestId: null,
       facts: [],
       plan: null,
+      numericCheck: null,
       replyText: '',
       replyMode: null,
     });
@@ -158,6 +168,7 @@ export const useApp = create<State>((set, get) => ({
         translation: presetTranslation,
         translateMode: 'preset',
         facts: analyze(text, presetTranslation),
+        numericCheck: checkNumericConsistency(text, presetTranslation),
       });
       return;
     }
@@ -174,6 +185,7 @@ export const useApp = create<State>((set, get) => ({
         elapsedMs: result.elapsed_ms,
         requestId: result.request_id,
         facts: analyze(text, result.translation),
+        numericCheck: checkNumericConsistency(text, result.translation),
       });
     } catch (error) {
       if (get().version !== next) return;
@@ -278,6 +290,7 @@ export const useApp = create<State>((set, get) => ({
       source: null,
       facts: [],
       plan: null,
+      numericCheck: null,
       replyText: '',
       replyMode: null,
       elapsedMs: null,

@@ -15,6 +15,7 @@ import {
 } from '@shared/facts';
 import { buildHintPlan, type HintPlan } from '@services/pronunciation';
 import type { HintSystem } from '@shared/languages';
+import { toChineseSpeech } from '@shared/numeric-check';
 
 export interface FactRow {
   id: string;
@@ -97,7 +98,7 @@ export function needsWording(row: FactRow): boolean {
 
 export function confirm(rows: FactRow[]): ConfirmPlan {
   const picked = rows.filter((row) => row.checked);
-  return planConfirmSentence(
+  const plan = planConfirmSentence(
     picked.map((row) => ({
       id: row.id,
       kind: row.kind,
@@ -113,6 +114,16 @@ export function confirm(rows: FactRow[]): ConfirmPlan {
     'English',
     'Chinese',
   );
+  if (!plan.ok) return plan;
+  /*
+   * 中文那句不能夹英文写法。
+   *
+   * 实测 `我理解的是4 p.m.、明天，对吗？` —— 读中文的人在这里卡住，
+   * 而这恰恰是他最需要确认的那一秒。英文那句（要给对方看的）保持英文，
+   * 只把中文的释义本地化。
+   */
+  const localized = toChineseSpeech(plan.meaning);
+  return localized && localized !== plan.meaning ? { ...plan, meaning: localized } : plan;
 }
 
 /** 读音提示：网页只做中文用户的汉字近音，不冒充多语言能力。 */

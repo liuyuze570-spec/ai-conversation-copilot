@@ -344,5 +344,50 @@ console.log('== L. deriveSpoken 的边界 ==');
   eq(edited.text, '16,000 dollars', 'L5 保留千分位写法');
 }
 
+console.log('== M. 中文释义里不许夹英文 ==');
+{
+  /*
+   * 2026-11-08 审查要求：中文确认句要用中文金额/日期/时间。
+   * 上一版释义直接抄 fact.value，实际输出是「我理解的是 twelve thousand」，
+   * 中文使用者读到最该确认的那一段反而看不懂。
+   */
+  const englishMoney = {
+    id: 'm2',
+    kind: 'money',
+    value: 'twelve thousand',
+    sourceText: 'The budget is twelve thousand, not twenty thousand.',
+  };
+  const plan = planConfirmSentence([englishMoney], 'English', 'Chinese');
+  eq(plan.ok, true, 'M1 英文金额能出确认句');
+  has(plan.meaning, '一万二千', 'M2 释义用中文金额');
+  lacks(plan.meaning, 'twelve thousand', 'M3 释义不夹英文数词');
+
+  const atTime = {
+    id: 't1',
+    kind: 'time',
+    value: '4.15 p.m.',
+    sourceText: 'at 4.15 p.m. on Friday.',
+  };
+  const t = planConfirmSentence([atTime], 'English', 'Chinese');
+  eq(t.ok, true, 'M4 点分时间能出确认句');
+  has(t.meaning, '下午4点15分', 'M5 释义用中文时间');
+
+  const day = {
+    id: 'd9',
+    kind: 'date',
+    value: 'next Monday',
+    sourceText: 'It will arrive next Monday at 9 a.m.',
+  };
+  const d = planConfirmSentence([day], 'English', 'Chinese');
+  eq(d.ok, true, 'M6 相对日期能出确认句');
+  has(d.meaning, '下周一', 'M7 释义里 next 也翻成中文');
+
+  // 已经是中文写法的值不要回炉：16000美元 → 一万六千美元 反而更难扫
+  const zhMoney = money('16000美元');
+  const z = planConfirmSentence([zhMoney], 'English', 'Chinese');
+  has(z.meaning, '16000美元', 'M8 中文写法保持原样');
+}
+
 console.log(failed === 0 ? `\nRESULT PASS ${total}/${total}` : `\nRESULT FAIL ${failed}/${total}`);
 process.exit(failed === 0 ? 0 : 1);
+

@@ -21,7 +21,8 @@
           "max_audio_mb": 8,
           "max_audio_seconds": 60,
           "quota_translate": 40,
-          "quota_transcribe": 10
+          "quota_transcribe": 10,
+          "quota_reply": 15
         },
         "notes": [
           "reply: provider=未配置模型接口; template=模板句（没有可用模型，界面上要标成模板）"
@@ -34,8 +35,8 @@
         "original": "Please send the report by 3 p.m. tomorrow.",
         "translation": "请在明天下午3时前将报告发送。",
         "facts": [
-          "时间 3 p.m 原话：3 p.m 核对这条 修改 改说法",
-          "日期 明天 原话：tomorrow 核对这条 修改 改说法"
+          "时间 3 p.m （下午3点） 原话：3 p.m 核对时间 修改时间 改说法",
+          "日期 明天 原话：tomorrow 核对日期 修改日期 改说法"
         ],
         "badges": [
           "翻译：本地翻译模型（真实翻译）",
@@ -46,15 +47,15 @@
     {
       "name": "confirm-after-edit",
       "data": {
-        "english": "Just to confirm, 4 p.m., tomorrow. Is that right?",
-        "meaning": "我理解的是4 p.m.、明天，对吗？",
+        "english": "Just to confirm, 3 p.m, tomorrow. Is that right?",
+        "meaning": "我理解的是下午3点、明天，对吗？",
         "blocked": null
       }
     },
     {
       "name": "big-card",
       "data": {
-        "text": "Just to confirm, 4 p.m., tomorrow. Is that right?",
+        "text": "Just to confirm, 3 p.m, tomorrow. Is that right?",
         "fontSize": "30px"
       }
     },
@@ -71,8 +72,8 @@
         "translation": "预算是一万五千，不是五万。",
         "badge": "预置演示",
         "facts": [
-          "金额 fifteen thousand 原话：fifteen thousand 核对这条 修改 改说法",
-          "金额 fifty thousand 被对方否定，不作数 原话：fifty thousand 核对这条 修改 改说法"
+          "金额 fifteen thousand （一万五千） 原话：fifteen thousand 核对金额 修改金额 改说法",
+          "金额 fifty thousand （五万） 被对方否定，不作数 原话：fifty thousand 核对金额 修改金额 改说法"
         ]
       }
     },

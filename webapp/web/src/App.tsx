@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { SAMPLE_CASES } from '@shared/samples';
 import { useApp } from './state';
 import {
@@ -14,6 +15,7 @@ import {
 import { toWav } from './adapter/wav';
 import { hintsFor, needsWording } from './lib/pipeline';
 import { modeLabel, type Health } from './api';
+import { toChineseSpeech, type NumericCheck } from '@shared/numeric-check';
 
 const ZH_EN_SAMPLES = SAMPLE_CASES.map((sample) => {
   const variant = sample.variants['zh-en'];
@@ -210,8 +212,15 @@ export function App() {
     cardTrigger.current?.focus();
   }, []);
 
+  // 隐私弹层的触发按钮：关闭后焦点回到这里，键盘用户不会掉回页首。
+  const privacyTrigger = useRef<HTMLButtonElement | null>(null);
+  const closePrivacy = useCallback(() => {
+    setShowPrivacy(false);
+    privacyTrigger.current?.focus();
+  }, []);
+
   return (
-    <div className="mx-auto min-h-screen w-full max-w-3xl px-4 pb-24 pt-4">
+    <div data-app-shell className="mx-auto min-h-screen w-full max-w-3xl px-4 pb-24 pt-4">
       <header className="surface rounded-2xl border border-white/10 bg-ink-900/80 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -226,8 +235,16 @@ export function App() {
           <button
             type="button"
             className="rounded-lg border border-white/12 px-2.5 py-1 text-[12px] text-white/80"
-            onClick={() => setOriginalFont((size) => Math.max(16, size - 2))}
-            aria-label="原文与译文整体调小"
+            onClick={() => {
+              /*
+               * 名称说「整体调小」，就必须两行都小。
+               * 实测这一颗只缩了原文（24→22px），译文停在 28px —— 按钮的名字
+               * 和它真正做的事不一致，读屏用户会以为译文也跟着变了。
+               */
+              setOriginalFont((size) => Math.max(16, size - 2));
+              setTranslationFont((size) => Math.max(16, size - 2));
+            }}
+            aria-label={`原文与译文整体调小，当前原文 ${originalFont} 像素、译文 ${translationFont} 像素`}
           >
             A−
           </button>
@@ -238,7 +255,7 @@ export function App() {
               setOriginalFont((size) => Math.min(48, size + 2));
               setTranslationFont((size) => Math.min(56, size + 2));
             }}
-            aria-label="原文与译文整体调大"
+            aria-label={`原文与译文整体调大，当前原文 ${originalFont} 像素、译文 ${translationFont} 像素`}
           >
             A+
           </button>
@@ -255,6 +272,7 @@ export function App() {
           <button
             type="button"
             className="rounded-lg border border-white/12 px-2.5 py-1 text-[12px] text-white/80"
+            ref={privacyTrigger}
             onClick={() => setShowPrivacy(true)}
           >
             隐私与数据
@@ -380,7 +398,7 @@ export function App() {
       </div>
 
       {state.original && (state.translation || state.translateMode === 'preset') ? (
-        <Section title="2 · 字幕" hint="原文在上，中文在下；字号可单独调">
+        <Section title="2 · 字幕" hint="原文在上，中文在下；顶部 A− / A+ 一起调两行">
           <div className="flex flex-wrap items-center gap-2">
             {sourceBadge}
             {sttBadge}
@@ -397,8 +415,9 @@ export function App() {
             style={{ fontSize: translationFont }}
             data-testid="translation-text"
           >
-            {state.translation}
+            <TranslationText text={state.translation} check={state.numericCheck} />
           </p>
+          <NumericWarning check={state.numericCheck} />
           {hints && hints.text ? (
             <p className="muted mt-2 break-words text-[13px] leading-relaxed text-white/45">
               <span className="text-white/35">汉字近音（规则近似，不是标准音标）：</span>
@@ -414,6 +433,7 @@ export function App() {
             {state.facts.map((fact) => (
               <li
                 key={fact.id}
+                id={`fact-row-${fact.id}`}
                 className="rounded-xl border border-white/10 bg-white/4 p-3"
                 data-testid="fact-row"
               >
@@ -428,10 +448,16 @@ export function App() {
                   >
                     {fact.value}
                   </span>
+                  <ChineseReading value={fact.value} />
                   {fact.negated ? <Badge tone="warn">被对方否定，不作数</Badge> : null}
                   {fact.edited ? <Badge tone="real">已由你改成「{fact.value}」</Badge> : null}
                   {needsWording(fact) ? <Badge tone="warn">需补说法</Badge> : null}
-                  <span className="muted text-[11.5px] text-white/40">原话：{fact.sourceText}</span>
+                  <span
+                    id={`fact-src-${fact.id}`}
+                    className="muted text-[11.5px] text-white/40"
+                  >
+                    原话：{fact.sourceText}
+                  </span>
                 </div>
                 {editing?.id === fact.id ? (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -486,26 +512,39 @@ export function App() {
                   </div>
                 ) : null}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {/*
+                    每条事实的操作必须能区分。
+                    实测上一版每行都叫「核对这条 / 修改 / 改说法」，
+                    读屏连续读下来完全分不清在操作哪一条 —— 而这张卡上
+                    通常同时有金额、时间、日期三行。
+                  */}
                   <label className="flex items-center gap-1.5 text-[12px] text-white/70">
                     <input
                       type="checkbox"
                       checked={fact.checked}
                       onChange={() => state.toggleFact(fact.id)}
                       data-testid="fact-check"
+                      aria-label={`核对${fact.label} ${fact.value}${
+                        fact.negated ? '（这一条已被对方否定）' : ''
+                      }`}
+                      aria-describedby={`fact-src-${fact.id}`}
                     />
-                    核对这条
+                    核对{fact.label}
                   </label>
                   <button
                     type="button"
                     className="rounded-lg border border-white/12 px-2 py-0.5 text-[12px] text-white/70"
                     onClick={() => setEditing({ id: fact.id, value: fact.value })}
+                    aria-label={`修改${fact.label} ${fact.value}`}
+                    data-testid="fact-edit"
                   >
-                    修改
+                    修改{fact.label}
                   </button>
                   <button
                     type="button"
                     className="rounded-lg border border-white/12 px-2 py-0.5 text-[12px] text-white/70"
                     onClick={() => setWording({ id: fact.id, value: fact.spoken ?? '' })}
+                    aria-label={`为${fact.label} ${fact.value} 补一句英语说法`}
                   >
                     改说法
                   </button>
@@ -598,6 +637,7 @@ export function App() {
           sentence={state.plan.sentence}
           meaning={state.plan.meaning}
           onClose={closeCard}
+          restoreFocus={cardTrigger}
           onSpeak={(text) => {
             const result = speak(text, 'en-US');
             if (!result.ok && result.reason) setFileNotice(result.reason);
@@ -607,12 +647,131 @@ export function App() {
 
       {showPrivacy ? (
         <PrivacySheet
-          onClose={() => setShowPrivacy(false)}
+          onClose={closePrivacy}
           health={health}
           serverNote={state.healthError}
+          restoreFocus={privacyTrigger}
         />
       ) : null}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------------- */
+/* 模态基座                                                                    */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * 所有弹层都走这里，不再各写一套焦点逻辑。
+ *
+ * 修的是两个实测问题：
+ *  1. 大字卡的 `role="dialog"` 只包住文字，朗读和关闭按钮在容器外面 ——
+ *     手写的 Tab 环里一个可聚焦元素都查不到，Tab 直接走进背景的 A−。
+ *  2. 隐私弹层根本没有 Tab 环、没有背景隔离，Esc 之后焦点也不回入口。
+ *
+ * 三条硬约束：
+ *  - **必须 portal 到 body**：下面会把 `[data-app-shell]` 设成 `inert`，
+ *    弹层如果还在 shell 里，会把自己一起禁掉。
+ *  - 用真正的 `inert` 属性隔离背景，而不是只靠 Tab 环兜住 —— 读屏的虚拟
+ *    光标走的是可访问树，Tab 环拦不住它。
+ *  - 关闭时把焦点还给触发它的那颗按钮，否则键盘用户会掉回页首。
+ */
+function Modal({
+  label,
+  labelledBy,
+  onClose,
+  restoreFocus,
+  overlayClass,
+  panelClass,
+  children,
+}: {
+  label?: string;
+  labelledBy?: string;
+  onClose: () => void;
+  restoreFocus?: React.RefObject<HTMLElement | null>;
+  overlayClass: string;
+  panelClass: string;
+  children: ReactNode;
+}) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const node = panelRef.current;
+    if (!node) return;
+
+    const focusables = () =>
+      Array.from(
+        node.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.getClientRects().length > 0);
+
+    // 初始焦点落在第一个可操作元素（大字卡是「朗读」，隐私是「知道了」）
+    (focusables()[0] ?? node).focus();
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusables();
+      if (!items.length) {
+        event.preventDefault();
+        node.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (!active || !node.contains(active)) {
+        event.preventDefault();
+        first.focus();
+        return;
+      }
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKey, true);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const shell = document.querySelector<HTMLElement>('[data-app-shell]');
+    shell?.setAttribute('inert', '');
+    shell?.setAttribute('aria-hidden', 'true');
+
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.body.style.overflow = previousOverflow;
+      shell?.removeAttribute('inert');
+      shell?.removeAttribute('aria-hidden');
+      restoreFocus?.current?.focus();
+    };
+  }, [onClose, restoreFocus]);
+
+  return createPortal(
+    <div className={overlayClass}>
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
+        aria-labelledby={labelledBy}
+        className={`outline-none ${panelClass}`}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -621,61 +780,33 @@ function BigCard({
   meaning,
   onClose,
   onSpeak,
+  restoreFocus,
 }: {
   sentence: string;
   meaning: string;
   onClose: () => void;
   onSpeak: (text: string) => void;
+  restoreFocus?: React.RefObject<HTMLElement | null>;
 }) {
-  const cardRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const node = cardRef.current;
-    node?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab' || !node) return;
-      // 手写 Tab 环：卡片打开时焦点不许跑到背景上。
-      const focusable = node.querySelectorAll<HTMLElement>('button, [href], [tabindex]:not([tabindex="-1"])');
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', onKey, true);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey, true);
-      document.body.style.overflow = '';
-    };
-  }, [onClose]);
-
   return (
-    <div className="fixed inset-0 z-40 flex flex-col justify-between bg-black p-5">
-      <div
-        ref={cardRef}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-label="给对方看的确认句"
-        className="flex min-h-0 flex-1 flex-col outline-none"
-        data-testid="big-card"
-      >
+    <Modal
+      label="给对方看的确认句"
+      onClose={onClose}
+      restoreFocus={restoreFocus}
+      overlayClass="fixed inset-0 z-50 flex flex-col bg-black p-5"
+      panelClass="flex min-h-0 flex-1 flex-col"
+    >
+      <div className="flex min-h-0 flex-1 flex-col" data-testid="big-card">
         <p className="text-[12px] text-white/50">把屏幕转向对方</p>
-        <p className="mt-4 overflow-y-auto text-[30px] font-semibold leading-tight text-white" data-testid="big-card-text">
+        <p
+          className="mt-4 overflow-y-auto text-[30px] font-semibold leading-tight text-white"
+          data-testid="big-card-text"
+        >
           {sentence}
         </p>
-        <p className="mt-4 text-[14px] text-white/55">{meaning}</p>
+        <p className="mt-4 text-[14px] text-white/55" data-testid="big-card-meaning">
+          {meaning}
+        </p>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         <button
@@ -694,7 +825,7 @@ function BigCard({
           关闭
         </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -702,64 +833,182 @@ function PrivacySheet({
   onClose,
   health,
   serverNote,
+  restoreFocus,
 }: {
   onClose: () => void;
   health: Health | null;
   serverNote: string | null;
+  restoreFocus?: React.RefObject<HTMLElement | null>;
 }) {
   const closeRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     closeRef.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end bg-black/80 p-4 sm:items-center sm:justify-center">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="privacy-title"
-        className="surface max-h-[80vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-white/12 bg-ink-900 p-4"
+    <Modal
+      labelledBy="privacy-title"
+      onClose={onClose}
+      restoreFocus={restoreFocus}
+      overlayClass="fixed inset-0 z-50 flex items-end bg-black/80 p-4 sm:items-center sm:justify-center"
+      panelClass="surface max-h-[80vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-white/12 bg-ink-900 p-4"
+    >
+      <h2 id="privacy-title" className="text-base font-semibold text-white">
+        隐私与数据
+      </h2>
+      <ul className="mt-3 space-y-2 text-[13px] leading-relaxed text-white/70">
+        <li>
+          · 这个页面**默认不保存**对话和录音：不写 localStorage、不上传桌面客户端的历史库；
+          刷新即清。你在桌面客户端里的记录不会被读到这里。
+        </li>
+        <li>
+          · 打开页面时会自动做一次健康检查和会话创建（仅这两次，不含你的内容）；
+          之后只有你点「翻译」「停止录音」「上传音频」才会发送正文或音频。
+        </li>
+        <li>
+          · 点麦克风才会申请权限，停止时立刻释放；离开页面会停止采集。浏览器录音格式为{' '}
+          <code className="text-white/85">webm/opus</code> 或 <code className="text-white/85">mp4</code>，
+          取决于浏览器；上传前会转成 16 kHz 单声道 WAV。
+        </li>
+        <li>
+          · 文字与音频会发送到**网站后端**（同一域名下的 <code>/api</code>），由服务器上的模型处理，
+          不是在你自己的设备里算。后端对音频写临时文件、识别完立即删除；日志只留状态码、错误码与耗时，
+          不留正文和译文。
+        </li>
+        <li>
+          · 模型 Key 只存在服务器环境变量里，网页、浏览器存储和日志里都没有。
+          如果以后接入云端模型服务，接收方会在下面的「当前能力」里写明。
+        </li>
+        <li>
+          · 当前能力：
+          {health
+            ? `翻译 = ${modeLabel(health.mode.translate)}；识别 = ${modeLabel(health.mode.transcribe)}；回复 = ${modeLabel(health.mode.reply)}`
+            : serverNote ?? '服务端状态未知'}
+          。
+        </li>
+        <li>
+          · 匿名访问有次数上限（服务端按会话计数）：翻译与识别各自计数，用完会明确提示，不会静默失败。
+        </li>
+        <li>· 删除网站上的内容不会影响桌面客户端里已保存的记录，也不会删除你已导出的文件。</li>
+      </ul>
+      <button
+        ref={closeRef}
+        type="button"
+        className="mt-4 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-ink-950"
+        onClick={onClose}
+        data-testid="privacy-close"
       >
-        <h2 id="privacy-title" className="text-base font-semibold text-white">
-          隐私与数据
-        </h2>
-        <ul className="mt-3 space-y-2 text-[13px] leading-relaxed text-white/70">
-          <li>
-            · 本页**默认不保存**对话与录音：不写 localStorage、不上传历史库；刷新即清。桌面客户端已有的历史不会被读到这里。
-          </li>
-          <li>· 你不点「翻译」「录音」「上传音频」时，不会发出任何请求。</li>
-          <li>
-            · 点麦克风才会申请权限，停止时立刻释放；离开页面会停止采集。浏览器录音格式为{' '}
-            <code className="text-white/85">webm/opus</code> 或 <code className="text-white/85">mp4</code>，
-            取决于浏览器，服务端两种都能解。
-          </li>
-          <li>
-            · 文字与音频会发到本项目的后端（同一域名下的 <code>/api</code>）。后端只保留必要状态、错误码与耗时，
-            不保留正文；模型 Key 只在服务端环境变量里，浏览器里没有。
-          </li>
-          <li>
-            · 当前能力：
-            {health
-              ? `翻译 = ${modeLabel(health.mode.translate)}；识别 = ${modeLabel(health.mode.transcribe)}`
-              : serverNote ?? '服务端状态未知'}
-            。
-          </li>
-          <li>· 匿名访问有次数上限（服务端按会话计数），用完会明确提示，不会静默失败。</li>
-        </ul>
-        <button
-          ref={closeRef}
-          type="button"
-          className="mt-4 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-ink-950"
-          onClick={onClose}
-        >
-          知道了
-        </button>
-      </div>
+        知道了
+      </button>
+    </Modal>
+  );
+}
+
+/**
+ * 关键信息对不上时的警示。
+ *
+ * 用 `role="alert"`：这是「必须先被读屏听到」的一类，而且只在真的对不上时
+ * 出现，不会像逐帧字幕那样反复打断。文案给出**原文是什么**，因为判断依据
+ * 永远是原文，不是译文。
+ */
+function NumericWarning({ check }: { check: NumericCheck | null }) {
+  if (!check || check.level !== 'warn') return null;
+
+  const items: string[] = [];
+  const srcNumbers = check.numbers.source.map((h) => `${h.raw}（${h.value}）`).join('、');
+  for (const hit of check.numbers.unsourced) {
+    items.push(`译文里的「${hit.raw}」在原文中找不到。${srcNumbers ? `原文是：${srcNumbers}` : ''}`);
+  }
+  for (const hit of check.numbers.missing) {
+    items.push(`原文的「${hit.raw}」（${hit.value}）在译文里没有出现`);
+  }
+  for (const hit of check.times.unsourced) {
+    const src = check.times.source.map((t) => t.raw).join('、');
+    items.push(`译文时间「${hit.raw}」与原文${src ? `「${src}」` : '（原文没有时间）'}对不上`);
+  }
+  for (const hit of check.times.missing) {
+    items.push(`原文时间「${hit.raw}」在译文里没有出现`);
+  }
+  for (const hit of check.days.unsourced) {
+    items.push(`译文里的「${hit.raw}」在原文中没有对应日期`);
+  }
+  for (const hit of check.days.missing) {
+    items.push(`原文的「${hit.raw}」在译文里没有出现`);
+  }
+  if (!check.negation.ok) {
+    items.push(`否定关系对不上：原文否定 ${check.negation.source.length} 处、译文 ${check.negation.target.length} 处`);
+  }
+  if (!items.length) return null;
+
+  return (
+    <div
+      role="alert"
+      data-testid="numeric-warning"
+      className="mt-3 rounded-xl border border-danger/45 bg-danger/12 p-3 text-[13px] leading-relaxed"
+    >
+      <p className="font-medium text-danger">关键信息对不上，请按原文核对</p>
+      <ul className="mt-1.5 space-y-1 text-white/80">
+        {items.map((text) => (
+          <li key={text}>· {text}</li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[12px] text-white/55">
+        下面的重点信息取自原文，按它核对；确认句也用原文生成。
+      </p>
     </div>
   );
+}
+
+/**
+ * 译文里的可疑数字就地标出来。
+ *
+ * 下面的警示块能说清「哪里错了」，但用户是**看着译文**的，视线不在下面。
+ * 所以这里不改译文（暗改等于替他做决定），只在原文找不到的值上打标记，
+ * 让他一眼看到「这个数不能信」。
+ */
+function TranslationText({ text, check }: { text: string; check: NumericCheck | null }) {
+  if (!check || check.level !== 'warn') return <>{text}</>;
+
+  const marks = [
+    ...check.numbers.unsourced.map((h) => ({ start: h.start, end: h.end, value: h.raw })),
+    ...check.times.unsourced.map((h) => ({ start: h.start, end: h.end, value: h.raw })),
+  ]
+    .filter((m) => m.end > m.start && m.end <= text.length)
+    .sort((a, b) => a.start - b.start);
+
+  // 去掉重叠（`12 000` 与 `2 000` 这种嵌套命中只保前一个）
+  const kept: typeof marks = [];
+  let cursor0 = -1;
+  for (const mark of marks) {
+    if (mark.start < cursor0) continue;
+    kept.push(mark);
+    cursor0 = mark.end;
+  }
+  if (!kept.length) return <>{text}</>;
+
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  kept.forEach((mark, index) => {
+    if (mark.start > cursor) nodes.push(text.slice(cursor, mark.start));
+    nodes.push(
+      <mark
+        key={`${mark.value}-${index}`}
+        className="rounded bg-danger/30 px-0.5 text-white underline decoration-danger decoration-wavy underline-offset-2"
+        title="原文里找不到这个值，按原文核对"
+      >
+        {text.slice(mark.start, mark.end)}
+      </mark>,
+    );
+    cursor = mark.end;
+  });
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return <>{nodes}</>;
+}
+
+/** 事实值的中文读法：`twelve thousand` 旁边标「一万二千」，不用自己换算。 */
+function ChineseReading({ value }: { value: string }) {
+  const zh = toChineseSpeech(value);
+  const text = (value ?? '').trim();
+  if (!zh || zh === text) return null;
+  return <span className="text-[12px] text-white/45">（{zh}）</span>;
 }

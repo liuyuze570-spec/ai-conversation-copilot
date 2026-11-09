@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import io
 import logging
 import os
 import tempfile
@@ -35,6 +36,33 @@ class ASRError(Exception):
         self.status = status
 
 
+def probe_seconds(data: bytes, suffix: str) -> float | None:
+    """
+    只读时长，不解码音频。
+
+    为什么要在推理**之前**探：
+    旧实现是 `backend.transcribe(...)` 跑完之后再看 `result.duration_seconds`
+    —— 到那一步 CPU 已经为一个 5 分钟的录音算了几十秒，然后才回一句
+    「录音超过 60 秒」。公网上这等于给了一个免费的算力放大器：
+    谁都可以反复传长录音把机器占满。
+
+    探不出来（老格式、损坏文件）返回 None，交给后面的流程自己报错，
+    不在这里猜一个时长出来。
+    """
+    try:
+        import av  # faster-whisper 的依赖，已在 requirements 里锁定版本
+
+        with av.open(io.BytesIO(data), metadata_errors="ignore") as container:
+            if container.duration is not None:
+                return float(container.duration) / 1_000_000.0
+            stream = container.streams.audio[0] if container.streams.audio else None
+            if stream is not None and stream.duration and stream.time_base:
+                return float(stream.duration * stream.time_base)
+    except Exception:  # noqa: BLE001 - 探测失败不该阻断正常识别
+        return None
+    return None
+
+
 @dataclass
 class ASRResult:
     text: str
@@ -44,13 +72,35 @@ class ASRResult:
     elapsed_ms: int
 
 
+def resolve_model_dir() -> str:
+    """
+    找本地识别模型，优先环境变量，其次按约定目录。
+
+    部署环境没法保证能设环境变量，所以这里除了 `COPILOT_WHISPER_DIR`，
+    还要认仓库约定下的两个位置。找不到就返回空串 —— 让上层明确报
+    「未配置」，而不是悄悄去 HuggingFace 下载（那会引入运行时联网）。
+    """
+    env = os.getenv("COPILOT_WHISPER_DIR")
+    if env:
+        return env
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here / "models" / "faster-whisper-base",
+        here.parent / "models" / "faster-whisper-base",
+    ]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return str(candidate)
+    return ""
+
+
 class LocalWhisper:
     mode = "local-whisper"
 
     def __init__(self) -> None:
         self.available = False
         self.detail = "未安装 faster-whisper"
-        model_dir = os.getenv("COPILOT_WHISPER_DIR") or ""
+        model_dir = resolve_model_dir()
         allow_download = os.getenv("COPILOT_WHISPER_ALLOW_DOWNLOAD") == "1"
         try:
             from faster_whisper import WhisperModel  # type: ignore
@@ -59,7 +109,7 @@ class LocalWhisper:
             return
 
         if not model_dir and not allow_download:
-            self.detail = "未设置 COPILOT_WHISPER_DIR（禁止运行时下载模型）"
+            self.detail = "未找到识别模型（COPILOT_WHISPER_DIR 或 server/models/faster-whisper-base）"
             return
 
         try:

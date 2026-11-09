@@ -12,7 +12,7 @@
 | 本地起服务、网页 + 翻译 + 识别全通 | **已实测** | 见 `docs/网站测试报告-0.7.0-web.md` |
 | 精简发布目录（256MB）能独立跑 | **已实测** | 从 `/f/copilot-release/web-0.7.0` 启动，首页 200、翻译 615ms、识别 419ms |
 | `Dockerfile` | **已写好，未构建** | 本机 Docker Desktop 未运行，`docker info` 连不上守护进程 |
-| 公网 HTTPS 地址 | **没有** | 没有 AWS 凭据，也没有取得发布授权；不编造地址 |
+| 公网 HTTPS 地址 | **已上线** | WorkBuddy Sites 发布：`https://en-zh-caption-helper.app.workbuddy.host/?sharecode=X3A6YY6GQH`；2026-11-09 09:52 实测首页 200 / health 200 |
 | GitHub Actions | **只准备了工作流文件，未跑过** | 不能写成「CI/CD 已完成」 |
 
 ---
@@ -76,10 +76,10 @@ docker run --rm -p 8000:8000 copilot-web:0.7.0-web.1
 
 ---
 
-## 5. AWS 最小费用方案（**尚未开通，等你确认**）
+## 5. AWS 最小费用方案（**已不需要：改用 WorkBuddy Sites 发布**）
 
-没有 `aws` CLI，也没有凭据（环境里唯一以 `AWS_` 开头的变量是 `AWS_PAGER`）。
-下面只是方案，**没有创建任何资源，没有产生任何费用**。
+公网地址已经通过 WorkBuddy Sites 拿到（见第 1 节表格），不需要 AWS 账号，
+也没有 `aws` CLI 或凭据。下面这段方案留着备查，**没有创建任何资源，没有产生任何费用**。
 
 | 方案 | 适用 | 近似费用（须以官网当期价为准） | 代价 |
 |---|---|---|---|
