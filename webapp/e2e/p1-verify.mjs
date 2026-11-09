@@ -293,8 +293,10 @@ for (const [pref, expected] of [['light', 'light'], ['dark', 'dark'], ['warm', '
 /*
  * F6 故意断网、F12 故意用错凭证，这两条必然产生网络错误日志。
  * 它们是**预期的失败路径**，不能算页面异常；其余错误才算。
+ * 公网经反向代理后 403 的 reason phrase 可能是空的（Chrome 记成 `403 ()`），
+ * 本地 uvicorn 记成 `403 (Forbidden)`；两种都只按状态码归类。
  */
-const expectedNetwork = /ERR_INTERNET_DISCONNECTED|403 \(Forbidden\)/;
+const expectedNetwork = /ERR_INTERNET_DISCONNECTED|403 \(/;
 const unexpectedErrors = consoleErrors.filter((line) => !expectedNetwork.test(line));
 record('预期的失败路径日志', consoleErrors.filter((line) => expectedNetwork.test(line)));
 expect('console 无意外错误', unexpectedErrors.length === 0, unexpectedErrors);

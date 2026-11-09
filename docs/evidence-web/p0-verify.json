@@ -1,5 +1,5 @@
 {
-  "base": "http://127.0.0.1:8901",
+  "base": "https://en-zh-caption-helper.app.workbuddy.host/?sharecode=X3A6YY6GQH",
   "steps": [
     {
       "name": "A-translation",
