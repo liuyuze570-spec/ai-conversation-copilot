@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { PlannedReply } from '@shared/reply-plan';
+import { missingNumberHints } from '@services/pronunciation';
 
 /**
  * 回复卡。
@@ -22,17 +23,32 @@ export function ReplyCards({
   onStop,
   onEdit,
   onShowBig,
+  onFeedback,
 }: {
   cards: PlannedReply[];
   sourceNote: string;
   onSpeak: (text: string, rate: number) => void;
   onStop: () => void;
   onEdit: (id: string, en: string) => void;
-  onShowBig: (card: PlannedReply) => void;
+  /**
+   * 放大时把**本次的按钮元素**一起交上去。
+   *
+   * 大字卡关闭后焦点必须回到点开的那一颗按钮，而不是落回 BODY。
+   * 三张卡各有各的放大按钮，靠一个写死的 ref 只能覆盖其中一个。
+   */
+  onShowBig: (card: PlannedReply, trigger: HTMLElement | null) => void;
+  /** 每张回复卡附近都要能报「这句回复不对」。 */
+  onFeedback: (card: PlannedReply) => void;
 }): ReactNode {
   const [showPhon, setShowPhon] = useState(false);
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
   const [status, setStatus] = useState('');
+
+  // 近音行最后一道防线：英文里有数字、近音里却没读到，就**明说**，
+  // 不能让用户以为这一行已经覆盖了整句（金额漏读是最危险的一种）。
+  const missingFor = (card: PlannedReply): string[] => [
+    ...new Set(card.segments.flatMap((segment) => missingNumberHints(segment.en, segment.phon))),
+  ];
 
   // 离开这一块（换了一句话）时把正在念的停掉。
   useEffect(() => () => onStop(), [onStop]);
@@ -102,7 +118,18 @@ export function ReplyCards({
 
             {showPhon ? (
               <div className="mt-2 rounded-lg border border-dashed border-white/15 bg-ink-950/40 p-2" data-testid={`reply-phon-${index}`}>
-                <p className="text-[11px] text-white/40">分段近音（按短语切开，不是逐字母转写）</p>
+                <p className="text-[11px] text-white/40">
+                  汉字近音辅助（仅帮助开口，不是标准音标）· 按短语分段
+                </p>
+                {missingFor(card).length ? (
+                  <p
+                    role="status"
+                    className="mt-1 text-[11.5px] text-amber-300"
+                    data-testid={`reply-phon-missing-${index}`}
+                  >
+                    这几个数字没有近音辅助：{missingFor(card).join('、')}。请照英文正文念，不要跳过。
+                  </p>
+                ) : null}
                 <ul className="mt-1 space-y-1">
                   {card.segments.map((segment, segmentIndex) => (
                     <li key={`${card.id}-seg-${segmentIndex}`} className="flex flex-wrap items-baseline gap-2">
@@ -165,7 +192,7 @@ export function ReplyCards({
                 className="rounded-lg border border-white/15 px-2.5 py-1 text-[12px] text-white/85"
                 aria-label={`放大展示：${card.purpose}`}
                 data-testid={`reply-big-${index}`}
-                onClick={() => onShowBig(card)}
+                onClick={(event) => onShowBig(card, event.currentTarget)}
               >
                 放大展示
               </button>
@@ -177,6 +204,15 @@ export function ReplyCards({
                 onClick={() => setEditing({ id: card.id, value: card.en })}
               >
                 编辑
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-white/15 px-2.5 py-1 text-[12px] text-white/85"
+                aria-label={`这句回复有误，去反馈：${card.purpose}`}
+                data-testid={`reply-feedback-${index}`}
+                onClick={() => onFeedback(card)}
+              >
+                反馈
               </button>
             </div>
 

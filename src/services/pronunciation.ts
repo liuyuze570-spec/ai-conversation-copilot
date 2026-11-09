@@ -767,8 +767,145 @@ export function splitSyllables(text: string, language: TargetLanguage = 'English
  * 同一个词在进程生命周期内只算一次。
  *
  * 上限存在的意义是防内存泄漏：真的有 4000 个不同的词时直接清空重来，
- * 比无限增长安全。
+// ------------------------------------------------------- 数字的英语读法
+/*
+ * 数字必须按**英语怎么念**转近音，不能逐字符拼，更不能被静默丢掉。
+ *
+ * 线上实测（0.7.0-web.7）：回复卡「Just to confirm, the deposit is 300 and
+ * the remaining balance is 900.」的近音行里 300、900 全不见了 ——
+ * `enTransliterateWord` 只认字母，纯数字返回空串，拼整句时就悄悄略过。
+ * 用户照着念，恰好把最要紧的金额漏了。金额读错比不读更危险。
+ *
+ * 这里是汉字近音辅助，**不是标准音标**（界面上必须这么标）。
  */
+const NUMBER_WORD_SOUND: Record<string, string> = {
+  zero: '齐柔', one: '万', two: '图', three: '斯瑞', four: '佛',
+  five: '法伊夫', six: '西克斯', seven: '赛文', eight: '艾特',
+  nine: '奈恩', ten: '腾', eleven: '伊莱文', twelve: '特外夫',
+  thirteen: '瑟腾', fourteen: '佛腾', fifteen: '菲夫腾',
+  sixteen: '西克斯腾', seventeen: '赛文腾', eighteen: '艾腾',
+  nineteen: '奈恩腾', twenty: '特温提', thirty: '瑟提', forty: '佛提',
+  fifty: '菲夫提', sixty: '西克斯提', seventy: '赛文提',
+  eighty: '艾提', ninety: '奈恩提',
+  hundred: '汉卓德', thousand: '骚怎', million: '米利恩', billion: '比利恩',
+  point: '泡因特', oh: '欧', "o'clock": '欧克洛克',
+};
+
+const SMALL_WORDS = [
+  'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+  'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
+  'seventeen', 'eighteen', 'nineteen',
+];
+const TENS_WORDS: Record<number, string> = {
+  2: 'twenty', 3: 'thirty', 4: 'forty', 5: 'fifty',
+  6: 'sixty', 7: 'seventy', 8: 'eighty', 9: 'ninety',
+};
+
+function underHundred(n: number): string[] {
+  if (n < 20) return [SMALL_WORDS[n]];
+  const ten = Math.floor(n / 10);
+  const rest = n % 10;
+  return rest ? [TENS_WORDS[ten], SMALL_WORDS[rest]] : [TENS_WORDS[ten]];
+}
+
+/** 整数 → 英语数词（美式，不加 and：450 = four hundred fifty）。 */
+function integerWords(value: number): string[] {
+  if (!Number.isFinite(value) || value < 0) return [];
+  let n = Math.floor(value);
+  if (n === 0) return ['zero'];
+  const out: string[] = [];
+  for (const [scale, name] of [
+    [1_000_000_000, 'billion'],
+    [1_000_000, 'million'],
+    [1_000, 'thousand'],
+  ] as const) {
+    if (n >= scale) {
+      out.push(...integerWords(Math.floor(n / scale)), name);
+      n %= scale;
+    }
+  }
+  if (n >= 100) {
+    out.push(SMALL_WORDS[Math.floor(n / 100)], 'hundred');
+    n %= 100;
+  }
+  if (n > 0) out.push(...underHundred(n));
+  return out;
+}
+
+/** 4:20 → four twenty；4:05 → four oh five；4:00 → four o'clock。 */
+function clockWords(hour: number, minute: number): string[] {
+  const head = integerWords(hour);
+  if (minute === 0) return [...head, "o'clock"];
+  if (minute < 10) return [...head, 'oh', SMALL_WORDS[minute]];
+  return [...head, ...integerWords(minute)];
+}
+
+/** 12.5 → twelve point five（小数部分逐位念，不读成「十二点五」的中文习惯）。 */
+function decimalWords(text: string): string[] {
+  const [whole, fraction] = text.split('.');
+  return [
+    ...integerWords(Number(whole)),
+    'point',
+    ...fraction.split('').map((digit) => SMALL_WORDS[Number(digit)]),
+  ];
+}
+
+/**
+ * 把一个数字 token 转成汉字近音。
+ *
+ * 返回 `null` 表示「这不是数字，交给字母规则」；返回 `〔…〕` 表示
+ * 「是数字但推不出读法」—— 必须显式出现在近音行里，**不许返回空串**。
+ */
+function soundForNumberToken(raw: string): string | null {
+  // 句尾标点必须剥掉：`...balance is 900.` 里的 token 是 "900."，
+  // 不剥就会掉回字母规则被清成空串，金额又悄悄没了。冒号/小数点只在
+  // **内部**有意义（4:20 / 12.5），所以只剥首尾。
+  const cleaned = raw
+    .trim()
+    .replace(/^[$€£¥(（]+/, '')
+    .replace(/[.,!?;:)\）%]+$/g, '')
+    .replace(/[,，]/g, '');
+  if (!cleaned) return null;
+
+  const clock = cleaned.match(/^(\d{1,2}):(\d{2})$/);
+  const decimal = cleaned.match(/^(\d+)\.(\d+)$/);
+  const integer = cleaned.match(/^\d+$/);
+  let words: string[] = [];
+  if (clock) words = clockWords(Number(clock[1]), Number(clock[2]));
+  else if (decimal) words = decimalWords(cleaned);
+  else if (integer) {
+    // 超过 12 位（订单号之类）按位念，别硬凑成「亿」。
+    words =
+      cleaned.length > 12
+        ? cleaned.split('').map((digit) => SMALL_WORDS[Number(digit)])
+        : integerWords(Number(cleaned));
+  } else return null;
+
+  if (!words.length) return '〔数字读音未确定〕';
+  const sounds = words.map((word) => NUMBER_WORD_SOUND[word]);
+  if (sounds.some((sound) => !sound)) return '〔数字读音未确定〕';
+  return sounds.join(' ');
+}
+
+/**
+ * 核对近音有没有把英文里的数字漏掉。
+ *
+ * 界面拿它做最后一道防线：返回非空就显示「这些数字没有近音辅助」，
+ * 而不是让用户以为一行近音已经覆盖了整句。
+ */
+export function missingNumberHints(english: string, phonText: string): string[] {
+  const tokens = english.match(/\d[\d,:]*(?:\.\d+)?/g) ?? [];
+  const missing = new Set<string>();
+  for (const token of tokens) {
+    const expected = soundForNumberToken(token);
+    if (!expected || expected.startsWith('〔') || !phonText.includes(expected)) {
+      missing.add(token);
+    }
+  }
+  return [...missing];
+}
+
+/** 比无限增长安全。 */
 const WORD_CACHE = new Map<string, string>();
 const WORD_CACHE_LIMIT = 4000;
 
@@ -796,6 +933,13 @@ function computeWordSound(word: string, language: TargetLanguage): string {
     return reading.unknown.length ? '' : reading.zh;
   }
   if (language === 'Korean') return koWord(word).zh;
+  /*
+   * 数字要走在字母规则**之前**：`enTransliterateWord` 会把 "300" 清成空串，
+   * 整句近音里金额就消失了。数字读法由 `soundForNumberToken` 单独负责，
+   * 推不出时返回显式占位，绝不静默省略。
+   */
+  const numeric = soundForNumberToken(word);
+  if (numeric !== null) return numeric;
   return enTransliterateWord(word);
 }
 

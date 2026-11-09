@@ -137,11 +137,52 @@ function saysCurrency(fact: ReplyFact): boolean {
   return Boolean(fact.currency) || HAS_CURRENCY_WORD.test(fact.value ?? '');
 }
 
-function moneyClause(fact: ReplyFact): string {
-  const value = (fact.value ?? '').trim();
+/** 中文字符。英文句子里出现任意一个，就说明把中文展示值拼进来了。 */
+const CJK = /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/;
+
+/**
+ * 英文句子里的「值」：数字和币种分别取，绝不把中文展示值拼进来。
+ *
+ * 双语事实合并之后 `value` 是给中文用户看的（「450欧元」），`sourceText`
+ * 才是对方原话（「450 euros」）。旧代码直接把 `value` 塞进英文模板，
+ * 于是线上出现 `the deposit is 450欧元` —— 对方看不懂，用户照着念也尴尬。
+ *
+ * 三条规则：
+ *  1. 数字从**原话片段**抽；抽不到才退回中文展示值里的数字（同一个数，不会变）。
+ *  2. 币种只走 `currency` 代码 → 英语口语词（EUR → euros），不用中文词。
+ *  3. 原话本来就是英文且带着币种词（`450 euros`），照抄原话，不重复补一遍。
+ *
+ * 推不出数字就返回空串：宁可让这条确认句不成立，也不编一个金额出来。
+ */
+function englishAmount(fact: ReplyFact): string {
+  const source = (fact.sourceText ?? '').trim();
+  const shown = (fact.value ?? '').trim();
+  const digits =
+    source.match(/\d[\d,]*(?:\.\d+)?/)?.[0] ??
+    shown.match(/\d[\d,]*(?:\.\d+)?/)?.[0] ??
+    '';
+  if (!digits) return '';
+
+  // 原话侧已经是英文写法（450 euros / $450）：照抄，保留对方自己的说法。
+  if (source && !CJK.test(source) && /[a-zA-Z$€£¥]/.test(source)) {
+    const cleaned = source.replace(/[,，]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!CJK.test(cleaned)) return cleaned;
+  }
+
   const spoken = CURRENCY_SPOKEN[fact.currency ?? ''] ?? '';
-  if (spoken && !HAS_CURRENCY_WORD.test(value)) return `${value} ${spoken}`;
-  return value;
+  return spoken ? `${digits} ${spoken}` : digits;
+}
+
+/**
+ * 时长等非金额片段进英文句子时的守卫。
+ *
+ * 改期确认句要带「still last ninety minutes」。合并后 `value` 可能是
+ * 「90分钟」，这里只放行纯 ASCII 的原话片段；中文片段一律不进英文句，
+ * 由调用方退化成不带时长的说法（不会凭空造单位）。
+ */
+function englishFragment(fact: ReplyFact): string {
+  const source = (fact.sourceText ?? '').trim();
+  return source && !CJK.test(source) ? source : '';
 }
 
 /**
@@ -223,10 +264,16 @@ export function planReplies(input: ReplyPlanInput, phon: (text: string) => strin
     if (label && /^[a-zA-Z][a-zA-Z .'-]*$/.test(label)) return label;
     return 'amount';
   };
-  if (english && money.length && money.every((fact) => enName(fact) !== 'amount' || (fact.labelEn ?? '').trim())) {
+  const amounts = money.map(englishAmount);
+  if (
+    english &&
+    money.length &&
+    amounts.every(Boolean) &&
+    money.every((fact) => enName(fact) !== 'amount' || (fact.labelEn ?? '').trim())
+  ) {
     const allUnknown = money.every((fact) => !saysCurrency(fact));
     const clause = money
-      .map((fact) => `the ${enName(fact)} is ${moneyClause(fact)}`)
+      .map((fact, index) => `the ${enName(fact)} is ${amounts[index]}`)
       .join(' and ');
     out.push(
       makeReply(
@@ -244,7 +291,8 @@ export function planReplies(input: ReplyPlanInput, phon: (text: string) => strin
       ),
     );
   } else if (english && origin && current) {
-    const tail = duration ? `, and it will still last ${duration.sourceText || duration.value}` : '';
+    const durationEnglish = duration ? englishFragment(duration) : '';
+    const tail = durationEnglish ? `, and it will still last ${durationEnglish}` : '';
     out.push(
       makeReply(
         {

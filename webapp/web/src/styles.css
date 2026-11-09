@@ -58,3 +58,123 @@ body.hc {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   三种主题（0.7.0-web.8）
+   白色 / 深夜 / 护眼暖色。只换颜色，不动布局、字号与间距 —— 三种主题
+   结构完全一致，切换也不会卸载任何组件，输入内容不丢。
+
+   颜色写成语义变量，再把现有 Tailwind 的硬编码颜色类映射到变量上。
+   每档文字都按 WCAG 对比度挑过：
+     white  #1b2434 / #ffffff ≈ 15:1，次要 #4c5768 ≈ 7.2:1
+     dark   #f2f5fa / #11151d ≈ 16:1，次要 #b9c2d2 ≈ 10:1
+     warm   #332c21 / #fbf5e9 ≈ 11:1，次要 #615744 ≈ 6.5:1
+   「护眼暖色」只是低眩光配色，不作任何医学效果承诺。
+--------------------------------------------------------------------------- */
+:root,
+body[data-theme='dark'] {
+  --page: #0b0e14;
+  --surface: #11151d;
+  --surface-2: #161b25;
+  --raised: #1c222e;
+  --text: #f2f5fa;
+  --muted: #b9c2d2;
+  --line: rgba(255, 255, 255, 0.16);
+  --accent-solid: #3f5bd9;
+  --accent-text: #a9bcff;
+  --ok-soft: rgba(61, 220, 151, 0.1);
+  --ok-line: rgba(61, 220, 151, 0.45);
+  --focus: #8ea8ff;
+  color-scheme: dark;
+}
+
+body[data-theme='light'] {
+  --page: #f3f5f9;
+  --surface: #ffffff;
+  --surface-2: #f7f8fb;
+  --raised: #e9edf4;
+  --text: #1b2434;
+  --muted: #4c5768;
+  --line: rgba(24, 38, 64, 0.18);
+  --accent-solid: #2f51b8;
+  --accent-text: #2445a8;
+  --ok-soft: rgba(20, 120, 80, 0.09);
+  --ok-line: rgba(20, 120, 80, 0.4);
+  --focus: #1d3f9e;
+  color-scheme: light;
+}
+
+body[data-theme='warm'] {
+  --page: #f3ecdd;
+  --surface: #fbf5e9;
+  --surface-2: #f6eedd;
+  --raised: #efe3cb;
+  --text: #332c21;
+  --muted: #615744;
+  --line: rgba(86, 66, 35, 0.22);
+  --accent-solid: #8a4d1c;
+  --accent-text: #7a4318;
+  --ok-soft: rgba(80, 110, 60, 0.1);
+  --ok-line: rgba(80, 110, 60, 0.42);
+  --focus: #8a4d1c;
+  color-scheme: light;
+}
+
+body[data-theme] {
+  background: var(--page);
+  color: var(--text);
+}
+
+body[data-theme] #root {
+  background: var(--page);
+  color: var(--text);
+}
+
+/* 主文字 / 次要文字分两级；层级主要靠字号和留白，不靠把字调淡到看不清。 */
+body[data-theme] #root [class*='text-white'] { color: var(--text) !important; }
+body[data-theme] #root [class*='text-white/'] { color: var(--muted) !important; }
+body[data-theme] #root .muted { color: var(--muted) !important; }
+body[data-theme] #root .surface { background-color: var(--surface) !important; }
+body[data-theme] #root [class*='bg-ink-'] { background-color: var(--surface-2) !important; }
+body[data-theme] #root [class*='bg-white/'] { background-color: var(--raised) !important; }
+body[data-theme] #root [class*='border-white/'] { border-color: var(--line) !important; }
+body[data-theme] #root [class*='border-accent'] { border-color: var(--accent-solid) !important; }
+body[data-theme] #root [class*='ring-accent'] { --tw-ring-color: var(--accent-solid) !important; }
+body[data-theme] #root [class*='text-accent'] { color: var(--accent-text) !important; }
+body[data-theme] #root [class*='bg-accent'] {
+  background-color: var(--accent-solid) !important;
+  color: #ffffff !important;
+}
+body[data-theme] #root [class*='text-ink-950'],
+body[data-theme] #root [class*='text-black'] { color: var(--text) !important; }
+body[data-theme] #root [class*='bg-emerald-400/5'] { background-color: var(--ok-soft) !important; }
+body[data-theme] #root [class*='border-emerald-400/30'] { border-color: var(--ok-line) !important; }
+body[data-theme] #root [class*='text-amber-300'] { color: var(--accent-text) !important; }
+
+body[data-theme] :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* 减少动画是独立开关，不跟随系统时才由系统偏好决定。 */
+body.reduce-motion *,
+body.reduce-motion *::before,
+body.reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* 高对比独立于三主题，优先级放在最后：真换底色与描边。 */
+body.hc { background: #000 !important; color: #fff !important; }
+body.hc #root { background: #000 !important; }
+body.hc #root [class*='text-white'],
+body.hc #root [class*='text-white/'],
+body.hc #root .muted,
+body.hc #root [class*='text-accent'],
+body.hc #root [class*='text-ink-950'] { color: #fff !important; }
+body.hc #root .surface,
+body.hc #root [class*='bg-ink-'],
+body.hc #root [class*='bg-white/'] { background-color: #000 !important; }
+body.hc #root [class*='border-white/'],
+body.hc #root .surface { border-color: #fff !important; }

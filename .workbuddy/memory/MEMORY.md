@@ -78,3 +78,11 @@ status 三态 ok/approx/unknown；界面用文字「规则近似 N 段」+虚点
 3. **合并配对先对齐否定+role 再数值再顺序**：中文日期抽取顺序≠出现顺序，盲配会把否定标记串到当前值上（周四被划掉、周二当有效）。裸数字金额用**字符区间**排时间（`2 p.m.` 的 2 不是金额）。
 4. **回复卡本地拼**（`reply-plan.ts`）：确认/澄清/礼貌 + 兜底「请对方打字」，翻译成功即出、不等模型；英文句只用 `labelEn`（中文类名「金额」漏进英文句实测发生过）；近音默认隐藏有开关；无 Key 时界面标「规则生成」。
 测试：`.dev/p0-fidelity-unit.mjs` 35 条（A/B/C+变体，挂进 test:unit，现 16 套）+ `webapp/e2e/p0-verify.mjs` 真浏览器 24 项（本地/公网全 PASS）。报告第 14 节；官方赛题文件未找到（待核实）、讲述人实读与真实用户试用均 0。
+
+### 0.7.0-web.8 四条不变量（P0 三修 + P1）
+1. **英文句只用原话片段**：双语事实的 `value` 是中文展示值（450欧元），`sourceText` 才是原话（450 euros）。`reply-plan.englishAmount()` 把数字/币种/中文值三路分开；推不出数字宁可不生成确认句。
+2. **数字近音不许静默省略**：`pronunciation.ts` 按英语读法转（300→斯瑞 汉卓德、4:20→佛 特温提、12.5→…泡因特 法伊夫）；句尾标点先剥；推不出返回 `〔数字读音未确定〕` 占位；`missingNumberHints()` 做界面第二道防线。
+3. **大字卡焦点**：打开时记 `event.currentTarget`，弹层卸载统一 restoreFocus；触发按钮被卸载退到 `h1[data-focus-fallback]`。别把触发 ref 写死在某颗按钮上。
+4. **反馈是真 SQLite 文件库**（`feedback_store.py`）：1000 字按 Unicode 码点前后端同源（config 下发）；编号+一次性凭证（只存 SHA-256）；状态只能由带 admin token 的 PATCH 推进，前端无入口 → 未配置时永远「已收到」。路由必须注册在 `/{path:path}` 之前。
+主题：三套色靠 `body[data-theme]` + CSS 变量覆盖 Tailwind 类（作用域 `#root`）；跟随系统要在切到 system 时**重新读并校准** `systemPrefersDark()` 快照，否则 change 值相同被 React 跳过。
+**版本纪律**：线上仍是 web.7（用户未明确要求发布 → 不覆盖 live link）；`stable-web.7` 标签 + 回退预案（未演练）；版本号发布前必升。P2/P3/P4、真实用户试用、讲述人实读、线上持久化验证全部未完成，见 `docs/P2-P4-未完成清单与验收前置.md`。

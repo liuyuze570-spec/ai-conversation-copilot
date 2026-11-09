@@ -5,8 +5,8 @@
       "name": "health",
       "data": {
         "ok": true,
-        "version": "0.7.0-web.7",
-        "build": "web7-2026-11-09",
+        "version": "0.7.0-web.8",
+        "build": "web8-2026-11-09",
         "mode": {
           "translate": "local-onnx",
           "transcribe": "local-whisper",
@@ -26,9 +26,9 @@
           "quota_reply": 40
         },
         "diag": {
-          "boot": "4bc06aed",
-          "uptime_s": 20,
-          "sessions": 1,
+          "boot": "b9ce4ae0",
+          "uptime_s": 356,
+          "sessions": 11,
           "session_ttl": 7200,
           "session_transport": [
             "cookie",
@@ -36,13 +36,13 @@
           ]
         },
         "verified": {
-          "translate": false,
+          "translate": true,
           "transcribe": false,
-          "reply": false
+          "reply": true
         },
         "runtime": {
           "translate": {
-            "ok": 0,
+            "ok": 10,
             "fail": 0,
             "last_error": ""
           },
@@ -52,7 +52,7 @@
             "last_error": ""
           },
           "reply": {
-            "ok": 0,
+            "ok": 10,
             "fail": 0,
             "last_error": ""
           }

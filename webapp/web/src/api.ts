@@ -330,3 +330,97 @@ export function modeLabel(mode: TranslateMode | TranscribeMode): string {
       return '预置演示结果（不是真实模型输出）';
   }
 }
+
+// --------------------------------------------------------------------------- //
+// 反馈：真入库 + 匿名凭证查询
+//
+// 字数上限不写死在前端：从 /api/feedback/config 取，前后端同一份规则。
+// 提交失败时异常原样抛给界面，界面**不清空输入框**（用户写的内容不能丢）。
+// --------------------------------------------------------------------------- //
+
+export interface FeedbackConfig {
+  max_chars: number;
+  count_rule: string;
+  counted_fields: string[];
+  categories: { value: string; label: string }[];
+  statuses: { value: string; label: string }[];
+  attach_default: boolean;
+  storage: string;
+  note: string;
+}
+
+export interface FeedbackPayload {
+  where_wrong: string;
+  suggestion: string;
+  category: string;
+  original: string;
+  translation: string;
+  reply_text: string;
+  diagnostics: string;
+  attach_context: boolean;
+}
+
+export interface FeedbackReceipt {
+  ok: boolean;
+  ticket: string;
+  token: string;
+  status: string;
+  status_label: string;
+  chars: number;
+  max_chars: number;
+  fixed_version: string;
+}
+
+export interface FeedbackRecord {
+  ok: boolean;
+  ticket: string;
+  status: string;
+  status_label: string;
+  fixed_version: string;
+  created_at: number;
+  where_wrong: string;
+  suggestion: string;
+  category: string;
+  category_label: string;
+  original: string;
+  translation: string;
+  reply_text: string;
+  diagnostics: string;
+  attach_context: boolean;
+}
+
+export async function getFeedbackConfig(signal?: AbortSignal): Promise<FeedbackConfig> {
+  const response = await fetch(url('/api/feedback/config'), {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  });
+  return json<FeedbackConfig>(response);
+}
+
+export async function submitFeedback(
+  payload: FeedbackPayload,
+  signal?: AbortSignal,
+): Promise<FeedbackReceipt> {
+  const response = await fetch(url('/api/feedback'), {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: sessionHeaders({ 'content-type': 'application/json' }),
+    body: JSON.stringify(payload),
+    signal,
+  });
+  return json<FeedbackReceipt>(response);
+}
+
+export async function queryFeedback(
+  ticket: string,
+  token: string,
+  signal?: AbortSignal,
+): Promise<FeedbackRecord> {
+  const query = new URLSearchParams({ token });
+  const response = await fetch(
+    url(`/api/feedback/${encodeURIComponent(ticket)}?${query.toString()}`),
+    { method: 'GET', credentials: 'same-origin', signal },
+  );
+  return json<FeedbackRecord>(response);
+}

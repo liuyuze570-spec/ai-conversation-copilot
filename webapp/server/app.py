@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -42,9 +43,16 @@ from phrasebook import (
     strip_invented_currency,
 )
 from phrasebook import lookup as phrase_lookup
+from feedback_store import (
+    CATEGORY_LABELS,
+    CATEGORIES,
+    STATUS_LABELS,
+    FeedbackStore,
+    char_count,
+)
 
-VERSION = "0.7.0-web.7"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
-BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web7-2026-11-09")
+VERSION = "0.7.0-web.8"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
+BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web8-2026-11-09")
 # 每个进程一个短 ID：用来判「请求是不是被不同实例/重启后的进程接走的」。
 # 不含任何用户数据，可以安全地出现在 /api/health 里。
 BOOT_ID = secrets.token_hex(4)
@@ -60,6 +68,17 @@ QUOTA_REPLY = int(os.getenv("COPILOT_QUOTA_REPLY", "40"))
 SESSION_TTL = int(os.getenv("COPILOT_SESSION_TTL", "7200"))
 RATE_PER_MIN = int(os.getenv("COPILOT_RATE_PER_MIN", "30"))
 REAL_DISABLED = os.getenv("COPILOT_REAL_DISABLED") == "1"
+
+# 反馈库是**文件**，不是内存字典：进程重启后仍可按编号查到。
+# 初始化失败不能拖垮翻译主链路（部署环境可能是只读沙箱），
+# 这时反馈接口明确返回 503「未启用持久存储」，绝不假装保存成功。
+_data_dir = Path(os.getenv("COPILOT_DATA_DIR") or (Path(__file__).resolve().parent / "data"))
+try:
+    FEEDBACK: FeedbackStore | None = FeedbackStore(_data_dir / "feedback.sqlite3")
+except Exception as exc:  # pragma: no cover - 只在异常部署环境出现
+    LOG.warning("feedback-store-unavailable type=%s", type(exc).__name__)
+    FEEDBACK = None
+ADMIN_TOKEN = os.getenv("COPILOT_ADMIN_TOKEN", "")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -751,6 +770,125 @@ def reply(request: Request, body: ReplyBody) -> JSONResponse:
 def stats() -> dict:
     """只给计数，不含任何内容；用于自查与费用估算。"""
     return {"version": VERSION, "sessions": len(STORE.sessions), "counters": STORE.counters}
+
+
+# --------------------------------------------------------------------------- #
+# 反馈：真实入库 / 匿名凭证查询 / 状态如实
+#
+# 路由必须注册在末尾的 `/{path:path}` 静态兜底**之前**，否则会被它吞掉。
+# --------------------------------------------------------------------------- #
+
+FEEDBACK_CONFIG = {
+    "max_chars": 1000,
+    # 与前端 `[...text].length` 同源：Unicode 码点，不是 UTF-8 字节数。
+    "count_rule": "unicode_codepoints",
+    "counted_fields": ["where_wrong", "suggestion"],
+    "categories": [
+        {"value": key, "label": CATEGORY_LABELS[key]} for key in CATEGORIES
+    ],
+    "statuses": [{"value": key, "label": label} for key, label in STATUS_LABELS.items()],
+    "attach_default": False,
+    "storage": "sqlite-file" if FEEDBACK is not None else "unavailable",
+    # 采集/会话都在内存里，反馈单独落盘。这一句是给界面如实展示用的。
+    "note": "只保存你填写的文字和你勾选附带的上下文；不保存录音、不保存历史对话。",
+}
+
+
+@app.get("/api/feedback/config")
+def feedback_config() -> dict:
+    return FEEDBACK_CONFIG
+
+
+class FeedbackBody(BaseModel):
+    where_wrong: str = ""
+    suggestion: str = ""
+    category: str = "other"
+    original: str = ""
+    translation: str = ""
+    reply_text: str = ""
+    diagnostics: str = ""
+    attach_context: bool = False
+
+
+def _feedback_session_key(request: Request) -> str:
+    """匿名去重键：会话 id 优先，没有会话时用来源 IP 的哈希。
+
+    只存哈希，不把 IP / 会话 token 原文写进反馈表。
+    """
+    raw = session_id_from(request)
+    if not raw:
+        raw = request.client.host if request.client else "anonymous"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+
+@app.post("/api/feedback")
+def feedback_submit(request: Request, body: FeedbackBody) -> JSONResponse:
+    if FEEDBACK is None:
+        return error(request, "FEEDBACK_STORE_UNAVAILABLE", 503, "这台服务没有启用持久反馈库")
+    result, reason = FEEDBACK.submit(
+        session_key=_feedback_session_key(request),
+        where_wrong=body.where_wrong,
+        suggestion=body.suggestion,
+        category=body.category,
+        original=body.original,
+        translation=body.translation,
+        reply_text=body.reply_text,
+        diagnostics=body.diagnostics,
+        attach_context=body.attach_context,
+    )
+    if reason == "EMPTY":
+        return error(request, "FEEDBACK_EMPTY", 400, "请写一下哪里不对或建议怎么说")
+    if reason == "TOO_LONG":
+        return error(
+            request, "FEEDBACK_TOO_LONG", 400,
+            f"反馈最多 {FEEDBACK_CONFIG['max_chars']} 个字符，当前 {char_count(body.where_wrong + chr(10) + body.suggestion)} 个",
+        )
+    if reason == "CATEGORY":
+        return error(request, "FEEDBACK_CATEGORY", 400, "问题类型不在可选范围里")
+    if reason == "DUPLICATE":
+        return error(request, "FEEDBACK_DUPLICATE", 409, "刚才已经提交过一模一样的反馈了")
+    LOG.info("feedback-created ticket=%s chars=%d", result["ticket"], result["chars"])
+    # 只记编号和字数，正文不进日志。
+    return JSONResponse({"ok": True, **result})
+
+
+@app.get("/api/feedback/{ticket}")
+def feedback_lookup(ticket: str, token: str = "") -> JSONResponse:
+    if FEEDBACK is None:
+        return JSONResponse({"error": {"code": "FEEDBACK_STORE_UNAVAILABLE"}}, status_code=503)
+    record = FEEDBACK.lookup(ticket, token)
+    if record is None:
+        # 凭证不对时**不返回任何正文**，也不区分「编号不存在」和「token 错」。
+        return JSONResponse(
+            {"error": {"code": "FEEDBACK_NOT_FOUND", "message": "编号或查询凭证不对"}},
+            status_code=403,
+        )
+    return JSONResponse({"ok": True, **record})
+
+
+class FeedbackStatusBody(BaseModel):
+    status: str
+    fixed_version: str = ""
+
+
+@app.patch("/api/feedback/{ticket}/status")
+def feedback_status(ticket: str, body: FeedbackStatusBody, request: Request) -> JSONResponse:
+    """
+    状态推进只在服务端、凭管理员凭据调用。
+
+    前端没有这个入口，所以「提交完立刻显示已修复」在代码层面就不可能。
+    没有配置 COPILOT_ADMIN_TOKEN 时，状态一律停在「已收到」，如实说明待接入。
+    """
+    if not ADMIN_TOKEN or not secrets.compare_digest(
+        request.headers.get("x-admin-token", ""), ADMIN_TOKEN
+    ):
+        return JSONResponse(
+            {"error": {"code": "FEEDBACK_ADMIN_REQUIRED", "message": "未配置管理员凭据，状态只能停在「已收到」"}},
+            status_code=403,
+        )
+    if FEEDBACK is None or not FEEDBACK.set_status(ticket, body.status, body.fixed_version):
+        return JSONResponse({"error": {"code": "FEEDBACK_STATUS_FAILED"}}, status_code=400)
+    return JSONResponse({"ok": True, "ticket": ticket, "status": body.status})
 
 
 # --------------------------------------------------------------------------- #

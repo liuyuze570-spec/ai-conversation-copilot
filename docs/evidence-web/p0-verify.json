@@ -1,5 +1,5 @@
 {
-  "base": "https://en-zh-caption-helper.app.workbuddy.host/?sharecode=X3A6YY6GQH",
+  "base": "http://127.0.0.1:8899",
   "steps": [
     {
       "name": "A-translation",
@@ -46,6 +46,18 @@
       "data": "PASS"
     },
     {
+      "name": "A11 近音补齐 300 / 900 的英语读法",
+      "data": "PASS"
+    },
+    {
+      "name": "A12 没有「数字近音缺失」告警",
+      "data": "PASS"
+    },
+    {
+      "name": "A13 所有英文回复不含中文字符",
+      "data": "PASS"
+    },
+    {
       "name": "B-translation",
       "data": "排练由星期三上午改到星期五下午,仍持续90分钟。"
     },
@@ -86,12 +98,40 @@
       "data": "PASS"
     },
     {
-      "name": "R1 放大卡能打开且回复句在里面",
+      "name": "D-translation",
+      "data": "押金是450欧元"
+    },
+    {
+      "name": "D1 英文回复写成 450 euros",
       "data": "PASS"
     },
     {
-      "name": "R1-bigcard",
-      "data": "把屏幕转向对方Just to confirm, 4:20 p.m, Wednesday. Is that right?我"
+      "name": "D2 英文回复不含「欧元」等中文字符",
+      "data": "PASS"
+    },
+    {
+      "name": "D3 中文展示值仍是中文金额",
+      "data": "PASS"
+    },
+    {
+      "name": "D4 原话本来有币种，不触发「去掉币种」修正",
+      "data": "PASS"
+    },
+    {
+      "name": "R1 第 1 张卡用Escape关闭后焦点回到触发按钮",
+      "data": "PASS"
+    },
+    {
+      "name": "R2 第 2 张卡用关闭按钮关闭后焦点回到触发按钮",
+      "data": "PASS"
+    },
+    {
+      "name": "R3 第 3 张卡用Escape关闭后焦点回到触发按钮",
+      "data": "PASS"
+    },
+    {
+      "name": "R5 触发按钮消失时焦点退到主标题而非 BODY",
+      "data": "PASS"
     },
     {
       "name": "console 无错误",

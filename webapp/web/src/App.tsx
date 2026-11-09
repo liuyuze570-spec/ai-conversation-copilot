@@ -21,6 +21,26 @@ import type { TargetLanguage } from '@shared/types';
 import type { PlannedReply } from '@shared/reply-plan';
 import { REPLY_SOURCE_NOTE } from '@shared/reply-plan';
 import { ReplyCards } from './ReplyCards';
+import { FeedbackPanel, type FeedbackContext } from './FeedbackPanel';
+import {
+  applyTheme,
+  readThemePref,
+  saveThemePref,
+  systemPrefersDark,
+  THEME_OPTIONS,
+  watchSystemTheme,
+  type ThemeName,
+  type ThemePref,
+} from './theme';
+
+/** 主导航四项。学习页在 P3 才做，这一版明确标「未实现」，不放假按钮。 */
+type Tab = 'captions' | 'learn' | 'feedback' | 'settings';
+const TABS: { value: Tab; label: string }[] = [
+  { value: 'captions', label: '字幕' },
+  { value: 'learn', label: '学习' },
+  { value: 'feedback', label: '反馈' },
+  { value: 'settings', label: '设置' },
+];
 
 /** 源语言 → 读音提示用的语言名（读音规则按原文语言走，不按界面语言走）。 */
 const HINT_TARGET: Record<SourceLanguage, TargetLanguage> = {
@@ -81,6 +101,12 @@ export function App() {
   const [originalFont, setOriginalFont] = useState(24);
   const [translationFont, setTranslationFont] = useState(28);
   const [highContrast, setHighContrast] = useState(false);
+  const [tab, setTab] = useState<Tab>('captions');
+  const [themePref, setThemePref] = useState<ThemePref>(() => readThemePref());
+  const [systemDark, setSystemDark] = useState(() => systemPrefersDark());
+  const [themeName, setThemeName] = useState<ThemeName>('dark');
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [feedbackContext, setFeedbackContext] = useState<FeedbackContext | null>(null);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showCard, setShowCard] = useState(false);
   /**
@@ -92,7 +118,23 @@ export function App() {
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
   const [wording, setWording] = useState<{ id: string; value: string } | null>(null);
   const recorder = useRef<RecorderHandle | null>(null);
-  const cardTrigger = useRef<HTMLButtonElement | null>(null);
+  /**
+   * 大字卡关闭后要把焦点还给**本次点开的那一颗按钮**。
+   *
+   * 旧写法是把它当 `ref` 挂在唯一一颗「放大给对方看」上。回复卡的三颗
+   * 放大按钮没有绑定，于是从那儿打开再关掉，ref 是 null，焦点就掉回
+   * BODY —— 键盘用户得从头 Tab 一遍。现在改成**打开时记元素**，
+   * 所有入口共用，Escape 和「关闭」按钮都走同一条关闭路径。
+   */
+  const cardTrigger = useRef<HTMLElement | null>(null);
+  const openBigCard = useCallback(
+    (sentence: string, meaning: string, trigger: HTMLElement | null) => {
+      cardTrigger.current = trigger ?? (document.activeElement as HTMLElement | null);
+      setCardSentence({ sentence, meaning });
+      setShowCard(true);
+    },
+    [],
+  );
 
   useEffect(() => {
     setCaps(detectCapabilities());
@@ -131,6 +173,40 @@ export function App() {
   useEffect(() => {
     document.body.classList.toggle('hc', highContrast);
   }, [highContrast]);
+
+  /*
+   * 主题只写 body 的属性，不重挂载任何组件 —— 切换时字幕、事实卡、
+   * 回复卡和输入框里的字都还在。跟随系统时订阅系统偏好变化。
+   */
+  useEffect(() => {
+    saveThemePref(themePref);
+    /*
+     * 点「跟随系统」的那一刻必须**重新读**系统真实偏好。
+     *
+     * `systemDark` 是挂载时的快照：如果用户系统本来就是深色、之后一直没变，
+     * 中途切到「跟随系统」时快照还是浅色，change 事件永远不来 —— 界面会
+     * 一直停在白色模式。这是真 Chrome 验收里抓到的，靠订阅补不上第一次。
+     */
+    const dark = themePref === 'system' ? systemPrefersDark() : systemDark;
+    setThemeName(applyTheme(themePref, dark));
+  }, [themePref, systemDark]);
+  useEffect(() => {
+    if (themePref !== 'system') return;
+    /*
+     * 订阅建立的那一刻先把快照校准到系统**当前**的偏好。
+     *
+     * 不校准会漏一次：系统在「非跟随」期间变成深色，这时没人订阅；
+     * 切到「跟随」后界面靠 `systemPrefersDark()` 直接读对了深色，但
+     * `systemDark` 这个 state 还是旧的 false。等系统切回浅色时，
+     * change 事件带来 false —— 和旧快照相同，React 跳过重渲染，
+     * 界面就一直卡在深色。真 Chrome 验收里抓到过。
+     */
+    setSystemDark(systemPrefersDark());
+    return watchSystemTheme(setSystemDark);
+  }, [themePref]);
+  useEffect(() => {
+    document.body.classList.toggle('reduce-motion', reduceMotion);
+  }, [reduceMotion]);
 
   const health = state.health;
   const modeBadges = useMemo(() => {
@@ -242,9 +318,9 @@ export function App() {
   const currentLang =
     SOURCE_LANGUAGES.find((item) => item.code === state.sourceLang) ?? SOURCE_LANGUAGES[0];
 
-  const closeCard = useCallback(() => {    setShowCard(false);
-    cardTrigger.current?.focus();
-  }, []);
+  // 归还焦点统一由弹层卸载时的 restoreFocus 负责（Escape 和「关闭」都走这里），
+  // 不再在这里手动 focus 一次，免得两条路径互相清空锚点。
+  const closeCard = useCallback(() => setShowCard(false), []);
 
   // 隐私弹层的触发按钮：关闭后焦点回到这里，键盘用户不会掉回页首。
   const privacyTrigger = useRef<HTMLButtonElement | null>(null);
@@ -255,71 +331,44 @@ export function App() {
 
   return (
     <div data-app-shell className="mx-auto min-h-screen w-full max-w-3xl px-4 pb-24 pt-4">
+      <nav aria-label="主导航" className="mb-3 flex flex-wrap gap-1.5" data-testid="main-nav">
+        {TABS.map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            aria-current={tab === item.value ? 'page' : undefined}
+            aria-label={`主导航：${item.label}`}
+            data-testid={`nav-${item.value}`}
+            onClick={() => setTab(item.value)}
+            className={`rounded-xl px-3.5 py-2 text-[13px] ${
+              tab === item.value
+                ? 'bg-accent/30 text-white ring-1 ring-accent'
+                : 'border border-white/12 text-white/75'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
       <header className="surface rounded-2xl border border-white/10 bg-ink-900/80 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-lg font-semibold text-white">英语沟通字幕助手</h1>
+            <h1 tabIndex={-1} data-focus-fallback className="text-lg font-semibold text-white outline-none">
+              英语沟通字幕助手
+            </h1>
             <p className="muted mt-1 text-[12.5px] text-white/55">
               看清对方说的英语 → 核对时间、金额和否定 → 说一句确认。网页版，免注册。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">{modeBadges}</div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="rounded-lg border border-white/12 px-2.5 py-1 text-[12px] text-white/80"
-            onClick={() => {
-              /*
-               * 名称说「整体调小」，就必须两行都小。
-               * 实测这一颗只缩了原文（24→22px），译文停在 28px —— 按钮的名字
-               * 和它真正做的事不一致，读屏用户会以为译文也跟着变了。
-               */
-              setOriginalFont((size) => Math.max(16, size - 2));
-              setTranslationFont((size) => Math.max(16, size - 2));
-            }}
-            aria-label={`原文与译文整体调小，当前原文 ${originalFont} 像素、译文 ${translationFont} 像素`}
-          >
-            A−
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-white/12 px-2.5 py-1 text-[12px] text-white/80"
-            onClick={() => {
-              setOriginalFont((size) => Math.min(48, size + 2));
-              setTranslationFont((size) => Math.min(56, size + 2));
-            }}
-            aria-label={`原文与译文整体调大，当前原文 ${originalFont} 像素、译文 ${translationFont} 像素`}
-          >
-            A+
-          </button>
-          <button
-            type="button"
-            aria-pressed={highContrast}
-            className={`rounded-lg border px-2.5 py-1 text-[12px] ${
-              highContrast ? 'border-warn/60 bg-warn/15 text-warn' : 'border-white/12 text-white/80'
-            }`}
-            onClick={() => setHighContrast((value) => !value)}
-          >
-            高对比
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-white/12 px-2.5 py-1 text-[12px] text-white/80"
-            ref={privacyTrigger}
-            onClick={() => setShowPrivacy(true)}
-          >
-            隐私与数据
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-white/12 px-2.5 py-1 text-[12px] text-white/80"
-            onClick={() => state.clear()}
-          >
-            清空屏幕
-          </button>
-        </div>
+        <p className="mt-2 text-[11.5px] text-white/45" data-testid="header-status">
+          当前主题：{THEME_OPTIONS.find((option) => option.value === themePref)?.label ?? '跟随系统'}
+          （{themeName === 'dark' ? '深夜' : themeName === 'warm' ? '护眼暖色' : '白色'}）
+          {' · '}字号、对比度、模型详情和诊断信息在「设置」里。
+        </p>
       </header>
+      <div hidden={tab !== 'captions'}>
 
       <Section title="1 · 对方说的话" hint="先说清是哪种语言，再打字、录音，或点一条预置样例">
         {/*
@@ -579,6 +628,19 @@ export function App() {
             <TranslationText text={state.translation} check={state.numericCheck} />
           </p>
           <NumericWarning check={state.numericCheck} />
+          {/* 每条字幕旁边都要能报「翻译有误」，并且带上这句原文与译文供预览。 */}
+          <button
+            type="button"
+            data-testid="feedback-from-caption"
+            aria-label="这句翻译有误，去反馈"
+            onClick={() => {
+              setFeedbackContext({ original: state.original, translation: state.translation });
+              setTab('feedback');
+            }}
+            className="mt-2 rounded-lg border border-white/15 px-2.5 py-1 text-[11.5px] text-white/75"
+          >
+            翻译有误 / 反馈
+          </button>
           {/*
             模型对译文做过的修正要**说出来**。
             「300美元」被剪成「300」如果不说，用户会以为模型本来就这么翻；
@@ -781,13 +843,15 @@ export function App() {
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    ref={cardTrigger}
                     data-testid="show-card"
                     className="rounded-lg bg-white/10 px-3 py-1.5 text-[12px] text-white"
-                    onClick={() => {
-                      setCardSentence(null);
-                      setShowCard(true);
-                    }}
+                    onClick={(event) =>
+                      openBigCard(
+                        state.plan?.sentence ?? '',
+                        state.plan?.meaning ?? '',
+                        event.currentTarget,
+                      )
+                    }
                   >
                     放大给对方看
                   </button>
@@ -836,21 +900,196 @@ export function App() {
           }}
           onStop={() => stopSpeaking()}
           onEdit={(id, en) => state.editReply(id, en)}
-          onShowBig={(card: PlannedReply) => {
-            setCardSentence({ sentence: card.en, meaning: card.zh });
-            setShowCard(true);
+          onShowBig={(card: PlannedReply, trigger) => openBigCard(card.en, card.zh, trigger)}
+          onFeedback={(card: PlannedReply) => {
+            setFeedbackContext({
+              original: state.original,
+              translation: state.translation,
+              reply: card.en,
+            });
+            setTab('feedback');
           }}
         />
       ) : null}
 
       <footer className="mt-6 text-[11.5px] leading-relaxed text-white/40">
         <p>
-          本页默认不在浏览器里保存对话与录音；服务端只在内存里处理，重启即清。用到的模型与接收方见「隐私与数据」。
+          字幕、录音和会话只在服务端内存里处理，重启即清；反馈单独写进数据库（见「反馈」）。
+          模型与接收方见「设置—隐私与数据」。
         </p>
         <p className="mt-1">
           重点信息由规则提取，可能与原话有出入；确认句请当面再核一遍。网页不做 Windows 系统声音采集，那条链路由桌面客户端负责。
         </p>
+        <button
+          type="button"
+          data-testid="feedback-general"
+          aria-label="普通意见反馈（不带当前句子）"
+          onClick={() => {
+            setFeedbackContext(null);
+            setTab('feedback');
+          }}
+          className="mt-2 rounded-lg border border-white/15 px-2.5 py-1 text-[11.5px] text-white/75"
+        >
+          普通意见反馈
+        </button>
       </footer>
+      </div>
+
+      {/* ---- 学习：P3 才做。这一版明确写「未完成」，不放假按钮 ---- */}
+      <div hidden={tab !== 'learn'} className="mt-4">
+        <section className="surface rounded-2xl border border-white/10 bg-ink-900/80 p-4" data-testid="learn-page">
+          <h2 className="text-base font-semibold text-white">英语学习模式 · 未完成（P3）</h2>
+          <p className="muted mt-2 text-[12.5px] text-white/60">
+            这一版还没有实现下面的功能。列出来是为了说清范围，不是可以点的入口：
+          </p>
+          <ul className="mt-2 space-y-1 text-[12.5px] text-white/70">
+            <li>· 选词看释义、读音和当前句中的意思</li>
+            <li>· 生词本（原句 + 用户笔记）、英中显示切换、复习卡</li>
+            <li>· 本地音频的 AB 复读与慢速播放（只能控制本应用可控制的音频）</li>
+          </ul>
+          <p className="mt-3 text-[11.5px] text-white/45">
+            词表来源与授权尚未核实，不标为官方完整四六级词库；练习不承诺押题、通过或提分。
+            也不声称能控制第三方播放器的跳转或变速。
+          </p>
+        </section>
+      </div>
+
+      {/* ---- 反馈：真入库、真编号、真查询 ---- */}
+      <div hidden={tab !== 'feedback'} className="mt-4">
+        <section className="surface rounded-2xl border border-white/10 bg-ink-900/80 p-4">
+          <FeedbackPanel
+            context={feedbackContext}
+            version={health?.version}
+          />
+        </section>
+      </div>
+
+      {/* ---- 设置：主题 / 可读性 / 模型与诊断 ---- */}
+      <div hidden={tab !== 'settings'} className="mt-4 space-y-4">
+        <section className="surface rounded-2xl border border-white/10 bg-ink-900/80 p-4" data-testid="settings-theme">
+          <h2 className="text-base font-semibold text-white">主题</h2>
+          <p className="muted mt-1 text-[12px] text-white/55">
+            三种主题布局完全相同，切换不清空当前字幕、事实卡和回复卡。护眼暖色只是低眩光配色，不作医学效果承诺。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="主题选择">
+            {THEME_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={themePref === option.value}
+                aria-label={`主题：${option.label}。${option.hint}`}
+                data-testid={`theme-${option.value}`}
+                onClick={() => setThemePref(option.value)}
+                className={`rounded-xl px-3 py-2 text-[12.5px] ${
+                  themePref === option.value
+                    ? 'bg-accent/30 text-white ring-1 ring-accent'
+                    : 'border border-white/15 text-white/80'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11.5px] text-white/45" data-testid="theme-active">
+            当前生效：{themeName === 'dark' ? '深夜模式' : themeName === 'warm' ? '护眼暖色' : '白色模式'}
+            {themePref === 'system' ? '（跟随系统）' : ''}
+          </p>
+        </section>
+
+        <section className="surface rounded-2xl border border-white/10 bg-ink-900/80 p-4">
+          <h2 className="text-base font-semibold text-white">字号与可读性</h2>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              aria-label={`原文与译文整体调小，当前原文 ${originalFont} 像素、译文 ${translationFont} 像素`}
+              data-testid="font-smaller"
+              onClick={() => {
+                setOriginalFont((size) => Math.max(16, size - 2));
+                setTranslationFont((size) => Math.max(16, size - 2));
+              }}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-[12.5px] text-white/85"
+            >
+              A−
+            </button>
+            <button
+              type="button"
+              aria-label={`原文与译文整体调大，当前原文 ${originalFont} 像素、译文 ${translationFont} 像素`}
+              data-testid="font-larger"
+              onClick={() => {
+                setOriginalFont((size) => Math.min(48, size + 2));
+                setTranslationFont((size) => Math.min(56, size + 2));
+              }}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-[12.5px] text-white/85"
+            >
+              A+
+            </button>
+            <button
+              type="button"
+              aria-pressed={highContrast}
+              data-testid="toggle-contrast"
+              onClick={() => setHighContrast((value) => !value)}
+              className={`rounded-lg border px-3 py-1.5 text-[12.5px] ${
+                highContrast ? 'border-warn/60 bg-warn/15 text-warn' : 'border-white/15 text-white/80'
+              }`}
+            >
+              高对比
+            </button>
+            <button
+              type="button"
+              aria-pressed={reduceMotion}
+              data-testid="toggle-motion"
+              onClick={() => setReduceMotion((value) => !value)}
+              className={`rounded-lg border px-3 py-1.5 text-[12.5px] ${
+                reduceMotion ? 'border-warn/60 bg-warn/15 text-warn' : 'border-white/15 text-white/80'
+              }`}
+            >
+              减少动画
+            </button>
+            <button
+              type="button"
+              ref={privacyTrigger}
+              data-testid="open-privacy"
+              onClick={() => setShowPrivacy(true)}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-[12.5px] text-white/80"
+            >
+              隐私与数据
+            </button>
+            <button
+              type="button"
+              onClick={() => state.clear()}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-[12.5px] text-white/80"
+            >
+              清空屏幕
+            </button>
+          </div>
+          <p className="mt-2 text-[11.5px] text-white/45">
+            高对比模式独立于三主题；系统设置为「减少动画」时也会自动生效。
+          </p>
+        </section>
+
+        <section className="surface rounded-2xl border border-white/10 bg-ink-900/80 p-4" data-testid="settings-diagnostics">
+          <h2 className="text-base font-semibold text-white">模型详情与诊断</h2>
+          <p className="muted mt-1 text-[12px] text-white/55">
+            下面这些是服务端 /api/health 真实返回的内容，不是本地写死的清单。
+          </p>
+          <pre className="mt-3 max-h-64 overflow-auto rounded-xl border border-white/10 bg-ink-950/60 p-3 text-[11.5px] leading-relaxed text-white/75">
+{JSON.stringify(
+  {
+    version: health?.version ?? null,
+    mode: health?.mode ?? null,
+    real_configured: health?.real ?? null,
+    verified_ok: health?.verified ?? null,
+    languages: health?.languages ?? null,
+    limits: health?.limits ?? null,
+    notes: health?.notes ?? [],
+    active_theme: themeName,
+  },
+  null,
+  2,
+)}
+          </pre>
+        </section>
+      </div>
 
       {showCard && (cardSentence || state.plan?.ok) ? (
         <BigCard
@@ -973,7 +1212,14 @@ function Modal({
       document.body.style.overflow = previousOverflow;
       shell?.removeAttribute('inert');
       shell?.removeAttribute('aria-hidden');
-      restoreFocus?.current?.focus();
+      /*
+       * 焦点必须回到触发它的按钮。若那颗按钮在弹层打开期间被卸载了
+       * （来了新字幕、切了语言），focus 一个 detached 节点是无效的，
+       * 浏览器会把焦点丢给 BODY。这时退到主标题这个稳定锚点。
+       */
+      const target = restoreFocus?.current;
+      if (target && document.contains(target)) target.focus();
+      else document.querySelector<HTMLElement>('[data-focus-fallback]')?.focus();
     };
   }, [onClose, restoreFocus]);
 

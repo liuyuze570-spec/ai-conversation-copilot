@@ -22,3 +22,7 @@ webapp/web/node_modules/
 
 __pycache__/
 *.pyc
+
+# 反馈库是运行时用户数据（含用户写的原文/译文），不进 Git。
+# 干净克隆会在首次启动时自动建目录与表结构。
+webapp/server/data/
