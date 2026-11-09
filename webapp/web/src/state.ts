@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import {
   ApiError,
-  createSession,
+  ensureSession,
   getHealth,
   reply as apiReply,
   transcribe as apiTranscribe,
   translate as apiTranslate,
+  withSession,
   type Health,
   type TranslateMode,
   type TranscribeMode,
@@ -32,6 +33,15 @@ export interface Notice {
 interface State {
   health: Health | null;
   healthError: string | null;
+  /**
+   * 匿名会话的准备状态。
+   *
+   * `pending` 时真实调用按钮必须不可提交：健康徽标只证明进程活着，
+   * 不证明「这一趟请求带得回一个服务端认识的会话」。上一版正是把这两件事
+   * 混在一起，才出现「页面看起来正常，一点就提示会话过期」。
+   */
+  sessionState: 'pending' | 'ready' | 'failed';
+  sessionError: string | null;
   stage: Stage;
   notice: Notice | null;
   original: string;
@@ -56,6 +66,7 @@ interface State {
   version: number;
 
   init: () => Promise<void>;
+  retrySession: () => Promise<void>;
   setOriginal: (text: string) => void;
   translate: (text: string, source: SourceKind, presetTranslation?: string) => Promise<void>;
   transcribe: (blob: Blob, filename: string) => Promise<void>;
@@ -96,7 +107,8 @@ function describe(error: unknown): string {
       case 'NO_PRESET':
         return '演示模式下没有这句的预置译文，换一句或等服务端接上真实模型。';
       case 'SESSION_REQUIRED':
-        return '会话过期了，刷新页面会重新建立匿名会话。';
+        // 能走到这里说明「重建会话 + 重试一次」都没成，所以不再让用户刷新了事。
+        return '服务端没能确认这次访问的匿名会话（已自动重建重试一次）。输入内容还在，点「重试」再发一次；仍然不行就是服务端在重启，稍等再试。';
       case 'UPSTREAM_TIMEOUT':
         return '上游模型超时。可以重试一次；连续超时就先用文字输入。';
       case 'UPSTREAM_ERROR':
@@ -112,6 +124,8 @@ function describe(error: unknown): string {
 export const useApp = create<State>((set, get) => ({
   health: null,
   healthError: null,
+  sessionState: 'pending',
+  sessionError: null,
   stage: 'idle',
   notice: null,
   original: '',
@@ -132,10 +146,20 @@ export const useApp = create<State>((set, get) => ({
     try {
       const health = await getHealth();
       set({ health, healthError: null });
-      await createSession();
     } catch (error) {
       // 健康检查失败不阻塞界面：文字输入与预置样例仍然可用。
       set({ healthError: describe(error) || '服务端不可达' });
+    }
+    await get().retrySession();
+  },
+
+  retrySession: async () => {
+    set({ sessionState: 'pending', sessionError: null });
+    try {
+      await ensureSession(true);
+      set({ sessionState: 'ready', sessionError: null });
+    } catch (error) {
+      set({ sessionState: 'failed', sessionError: describe(error) || '建立匿名会话失败' });
     }
   },
 
@@ -176,7 +200,7 @@ export const useApp = create<State>((set, get) => ({
     const controller = new AbortController();
     inflight = controller;
     try {
-      const result = await apiTranslate(text, controller.signal);
+      const result = await withSession(() => apiTranslate(text, controller.signal), controller.signal);
       if (get().version !== next) return;
       set({
         stage: 'idle',
@@ -216,7 +240,7 @@ export const useApp = create<State>((set, get) => ({
     const controller = new AbortController();
     inflight = controller;
     try {
-      const heard = await apiTranscribe(blob, filename, controller.signal);
+      const heard = await withSession(() => apiTranscribe(blob, filename, controller.signal), controller.signal);
       if (get().version !== next) return;
       set({
         original: heard.text,
@@ -249,7 +273,10 @@ export const useApp = create<State>((set, get) => ({
     const controller = new AbortController();
     inflight = controller;
     try {
-      const result = await apiReply(original, translation, controller.signal);
+      const result = await withSession(
+        () => apiReply(original, translation, controller.signal),
+        controller.signal,
+      );
       if (get().version !== next) return;
       set({
         stage: 'idle',

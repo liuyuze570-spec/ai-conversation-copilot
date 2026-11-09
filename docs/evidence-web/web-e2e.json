@@ -5,7 +5,8 @@
       "name": "health",
       "data": {
         "ok": true,
-        "version": "0.7.0-web.1",
+        "version": "0.7.0-web.3",
+        "build": "web3-2026-11-09",
         "mode": {
           "translate": "local-onnx",
           "transcribe": "local-whisper",
@@ -23,6 +24,16 @@
           "quota_translate": 40,
           "quota_transcribe": 10,
           "quota_reply": 15
+        },
+        "diag": {
+          "boot": "2a489162",
+          "uptime_s": 327,
+          "sessions": 3,
+          "session_ttl": 7200,
+          "session_transport": [
+            "cookie",
+            "header"
+          ]
         },
         "notes": [
           "reply: provider=未配置模型接口; template=模板句（没有可用模型，界面上要标成模板）"

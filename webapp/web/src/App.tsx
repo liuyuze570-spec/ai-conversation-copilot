@@ -305,7 +305,7 @@ export function App() {
             type="button"
             data-testid="translate"
             className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-ink-950 disabled:opacity-40"
-            disabled={!state.original.trim() || state.stage !== 'idle'}
+            disabled={!state.original.trim() || state.stage !== 'idle' || state.sessionState !== 'ready'}
             onClick={() => void state.translate(state.original, 'text')}
           >
             翻译成中文
@@ -315,7 +315,7 @@ export function App() {
               type="button"
               data-testid="mic-start"
               className="rounded-xl border border-white/15 px-3 py-2 text-sm text-white/85"
-              disabled={caps?.mic !== 'ok'}
+              disabled={caps?.mic !== 'ok' || state.sessionState !== 'ready'}
               onClick={() => void beginRecording()}
             >
               开始录音
@@ -338,10 +338,34 @@ export function App() {
               accept="audio/*"
               className="sr-only"
               data-testid="audio-file"
+              disabled={state.sessionState !== 'ready'}
               onChange={(event) => void onFile(event.target.files?.[0] ?? null)}
             />
           </label>
         </div>
+
+        {/* 会话没准备好时，真实调用必须先不可提交：健康徽标只说明进程活着，
+            不能说明这一趟请求带得回服务端认识的会话。 */}
+        {state.sessionState === 'pending' ? (
+          <p className="muted mt-2 text-[11.5px] text-white/50" data-testid="session-pending" role="status">
+            正在建立匿名会话，稍等一下就能提交（预置样例不受影响）。
+          </p>
+        ) : null}
+        {state.sessionState === 'failed' ? (
+          <p className="mt-2 flex flex-wrap items-center gap-2 text-[11.5px] text-warn" role="alert">
+            <span data-testid="session-failed">
+              没能建立匿名会话：{state.sessionError ?? '未知原因'}。真实调用暂时不可用，预置样例仍可点。
+            </span>
+            <button
+              type="button"
+              data-testid="session-retry"
+              className="rounded-lg border border-warn/50 px-2 py-0.5 text-[11.5px] text-warn"
+              onClick={() => void state.retrySession()}
+            >
+              重新建立会话
+            </button>
+          </p>
+        ) : null}
 
         <div className="mt-2 space-y-1 text-[11.5px]">
           {caps?.mic === 'insecure' ? (
@@ -387,6 +411,16 @@ export function App() {
 
       <div aria-live="polite" className="mt-2 min-h-[20px] text-[12px] text-white/60">
         {state.notice?.kind === 'error' ? <span className="text-danger">{state.notice.text}</span> : null}
+        {state.notice?.kind === 'error' && state.original.trim() && state.stage === 'idle' ? (
+          <button
+            type="button"
+            data-testid="retry-last"
+            className="ml-2 rounded-lg border border-white/25 px-2 py-0.5 text-[11.5px] text-white/80"
+            onClick={() => void state.translate(state.original, 'text')}
+          >
+            重试一次
+          </button>
+        ) : null}
         {state.notice?.kind === 'warn' ? <span className="text-warn">{state.notice.text}</span> : null}
         {!state.notice && stageText ? <span>{stageText}</span> : null}
         {!state.notice && !stageText && state.translateMode && state.translateMode !== 'preset' ? (

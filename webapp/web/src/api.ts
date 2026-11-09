@@ -59,13 +59,16 @@ export class ApiError extends Error {
   code: string;
   status: number;
   requestId: string | null;
+  /** 服务端明确说「这个问题可以安全重建会话后重试」。目前只有 SESSION_REQUIRED。 */
+  recoverable: boolean;
 
-  constructor(code: string, message: string, status: number, requestId: string | null) {
+  constructor(code: string, message: string, status: number, requestId: string | null, recoverable = false) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
     this.status = status;
     this.requestId = requestId;
+    this.recoverable = recoverable;
   }
 }
 
@@ -75,22 +78,100 @@ function url(path: string): string {
   return `${base}${path}`;
 }
 
+// --------------------------------------------------------------------------- //
+// 匿名会话
+//
+// 2026-11-09 公网实测的问题：访客第一次提交真实翻译就提示「会话过期」，刷新再来
+// 还是同样结果。会话本身是好的（同一条链接、同一份代码，命令行建完会话立刻翻译
+// 8/8 成功），所以问题在「浏览器这一侧有没有把会话带回来」以及「带回来的是不是
+// 被本进程认识」。
+//
+// 对策不是关掉鉴权，而是：
+// 1. 会话标识同时走两条路 —— HttpOnly Cookie（主）和 `X-Session-Id` 请求头（备），
+//    任一条通就能用；后端两种都查同一张会话表，没有放宽任何校验。
+// 2. 失去会话时，**保留用户输入**，重建一次并重试一次；会话检查在扣配额和跑模型
+//    之前，所以这次重试不会重复扣费，也不会绕过配额（新会话仍有同样的上限）。
+// 3. 只重试一次。再失败就如实报错并给重试入口，不做循环。
+// --------------------------------------------------------------------------- //
+
+const SESSION_KEY = 'copilot.session.token.v1';
+let sessionToken: string | null = readStoredToken();
+
+function readStoredToken(): string | null {
+  try {
+    return window.sessionStorage.getItem(SESSION_KEY);
+  } catch {
+    // 隐私模式/禁用存储时直接放弃，内存里那份仍然可用。
+    return null;
+  }
+}
+
+function writeStoredToken(token: string | null): void {
+  try {
+    if (token) window.sessionStorage.setItem(SESSION_KEY, token);
+    else window.sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* 存不了就算了 */
+  }
+}
+
+export function currentSessionToken(): string | null {
+  return sessionToken;
+}
+
+function sessionHeaders(extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = { ...(extra ?? {}) };
+  if (sessionToken) headers['x-session-id'] = sessionToken;
+  return headers;
+}
+
+export interface SessionInfo {
+  session_id: string;
+  token: string;
+  ttl_seconds: number;
+  quota?: { translate: number; transcribe: number; reply: number };
+}
+
+export async function createSession(signal?: AbortSignal): Promise<SessionInfo> {
+  const response = await fetch(url('/api/session'), {
+    method: 'POST',
+    credentials: 'same-origin',
+    signal,
+  });
+  const info = await json<SessionInfo>(response);
+  if (info.token) {
+    sessionToken = info.token;
+    writeStoredToken(info.token);
+  }
+  return info;
+}
+
+/** 确保手上有一个服务端认识的会话；`force` 用于已知失效后重建。 */
+export async function ensureSession(force = false, signal?: AbortSignal): Promise<SessionInfo> {
+  if (!force && sessionToken) {
+    return { session_id: sessionToken.slice(0, 8), token: sessionToken, ttl_seconds: 0 };
+  }
+  return createSession(signal);
+}
+
 async function fail(response: Response): Promise<never> {
   let code = `HTTP_${response.status}`;
   let message = '请求失败';
   let requestId: string | null = response.headers.get('x-request-id');
+  let recoverable = false;
   try {
     const body = (await response.json()) as {
-      error?: { code?: string; message?: string };
+      error?: { code?: string; message?: string; recoverable?: boolean };
       request_id?: string;
     };
     if (body.error?.code) code = body.error.code;
     if (body.error?.message) message = body.error.message;
+    if (body.error?.recoverable) recoverable = true;
     if (body.request_id) requestId = body.request_id;
   } catch {
     // 服务端没返回 JSON（网关层错误），保留 HTTP 码即可。
   }
-  throw new ApiError(code, message, response.status, requestId);
+  throw new ApiError(code, message, response.status, requestId, recoverable);
 }
 
 async function json<T>(response: Response): Promise<T> {
@@ -107,15 +188,6 @@ export async function getHealth(signal?: AbortSignal): Promise<Health> {
   return json<Health>(response);
 }
 
-export async function createSession(signal?: AbortSignal): Promise<{ session_id: string; ttl_seconds: number }> {
-  const response = await fetch(url('/api/session'), {
-    method: 'POST',
-    credentials: 'same-origin',
-    signal,
-  });
-  return json<{ session_id: string; ttl_seconds: number }>(response);
-}
-
 export async function translate(
   text: string,
   signal?: AbortSignal,
@@ -123,7 +195,7 @@ export async function translate(
   const response = await fetch(url('/api/translate'), {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
+    headers: sessionHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify({ text, source_language: 'en', target_language: 'zh' }),
     signal,
   });
@@ -141,6 +213,7 @@ export async function transcribe(
   const response = await fetch(url('/api/transcribe'), {
     method: 'POST',
     credentials: 'same-origin',
+    headers: sessionHeaders(),
     body: form,
     signal,
   });
@@ -155,11 +228,31 @@ export async function reply(
   const response = await fetch(url('/api/reply'), {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
+    headers: sessionHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify({ text, translation, target_language: 'en' }),
     signal,
   });
   return json<ReplyResult>(response);
+}
+
+/**
+ * 带会话执行一次真实调用。
+ *
+ * 顺序是固定的：先确保有会话，再发请求；只有 `SESSION_REQUIRED`（服务端标注
+ * `recoverable`）才会重建会话并**重试一次**。其它错误原样抛出，绝不悄悄重发 ——
+ * 重发等于让用户为同一句话付两次额度。
+ */
+export async function withSession<T>(run: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  await ensureSession(false, signal);
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'SESSION_REQUIRED' && error.recoverable) {
+      await ensureSession(true, signal);
+      return await run();
+    }
+    throw error;
+  }
 }
 
 export function modeLabel(mode: TranslateMode | TranscribeMode): string {

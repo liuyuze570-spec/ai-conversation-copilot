@@ -34,7 +34,12 @@ from engine_asr import ASRError, build_asr_chain, choose_asr, probe_seconds
 from engine_mt import UpstreamError, build_mt_chain, choose_mt
 from engine_reply import ReplyError, build_reply_chain, choose_reply
 
-VERSION = "0.7.0-web.1"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
+VERSION = "0.7.0-web.3"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
+BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web3-2026-11-09")
+# 每个进程一个短 ID：用来判「请求是不是被不同实例/重启后的进程接走的」。
+# 不含任何用户数据，可以安全地出现在 /api/health 里。
+BOOT_ID = secrets.token_hex(4)
+BOOT_AT = time.time()
 MAX_CHARS = int(os.getenv("COPILOT_MAX_CHARS", "2000"))
 MAX_AUDIO_MB = float(os.getenv("COPILOT_MAX_AUDIO_MB", "8"))
 MAX_AUDIO_SECONDS = int(os.getenv("COPILOT_MAX_AUDIO_SECONDS", "60"))
@@ -60,7 +65,7 @@ if _origins:
         allow_origins=_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST"],
-        allow_headers=["content-type"],
+        allow_headers=["content-type", "x-session-id"],
     )
 
 
@@ -97,17 +102,28 @@ class Store:
             self.sessions[sid] = session
             return session
 
-    def get(self, sid: str | None) -> Session | None:
+    def lookup(self, sid: str | None) -> tuple[Session | None, str]:
+        """返回 (会话, 原因)。原因只用于排查，不含 sid。
+
+        - `missing`：浏览器压根没带会话标识（Cookie 被丢、跨站、请求头没带上）；
+        - `unknown`：带了，但本进程没有这条会话（进程重启 / 请求被别的实例接走）；
+        - `expired`：带了，但超过 SESSION_TTL。
+
+        这三种在旧实现里都压成一句「会话已过期」，排查时看不出到底是哪一种。
+        """
         if not sid:
-            return None
+            return None, "missing"
         with self.lock:
             session = self.sessions.get(sid)
             if not session:
-                return None
+                return None, "unknown"
             if time.time() - session.created > SESSION_TTL:
                 self.sessions.pop(sid, None)
-                return None
-            return session
+                return None, "expired"
+            return session, ""
+
+    def get(self, sid: str | None) -> Session | None:
+        return self.lookup(sid)[0]
 
     def spend(self, session: Session, kind: str) -> bool:
         with self.lock:
@@ -227,10 +243,45 @@ def backend_or_none(chain: list[object]) -> object | None:
     return None
 
 
+SESSION_HEADER = "x-session-id"
+
+
+def session_id_from(request: Request) -> str | None:
+    """会话标识的两个来源：HttpOnly Cookie（主）与 `X-Session-Id` 请求头（备）。
+
+    为什么要有第二种：生产环境在反向代理后面，Cookie 的任何一环（域、路径、
+    网关改写、浏览器隐私设置）出问题，都会表现成「刚建的会话就用不了」。
+    请求头由页面自己带，不依赖 Cookie 策略，能把这类故障排除掉。
+    两种都校验同一个服务端会话表，没有放宽鉴权。
+    """
+    cookie = request.cookies.get("sid")
+    if cookie:
+        return cookie
+    header = request.headers.get(SESSION_HEADER)
+    if header:
+        value = header.strip()
+        return value or None
+    return None
+
+
 def require_session(request: Request) -> Session | JSONResponse:
-    session = STORE.get(request.cookies.get("sid"))
+    session, reason = STORE.lookup(session_id_from(request))
     if session is None:
-        return error(request, "SESSION_REQUIRED", 403, "会话已过期，请刷新页面")
+        STORE.bump("rejected")
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "SESSION_REQUIRED",
+                    # 这条消息要能让前端判断「可以安全重建一次再试」：
+                    # 会话检查在扣配额和跑模型之前，所以重建重试不会重复计费。
+                    "message": "匿名会话不存在或已过期，正在重新建立",
+                    "reason": reason,
+                    "recoverable": True,
+                },
+                "request_id": getattr(request.state, "request_id", None),
+            },
+            status_code=403,
+        )
     return session
 
 
@@ -268,6 +319,7 @@ def health() -> dict:
     return {
         "ok": True,
         "version": VERSION,
+        "build": BUILD_ID,
         "mode": mode,
         "real": real,
         "limits": {
@@ -278,6 +330,15 @@ def health() -> dict:
             "quota_transcribe": QUOTA_TRANSCRIBE,
             "quota_reply": QUOTA_REPLY,
         },
+        # 只为排查「会话为什么丢」：进程标识、运行时长、在线会话数。
+        # 不含 sid、密钥、任何正文。
+        "diag": {
+            "boot": BOOT_ID,
+            "uptime_s": int(time.time() - BOOT_AT),
+            "sessions": len(STORE.sessions),
+            "session_ttl": SESSION_TTL,
+            "session_transport": ["cookie", "header"],
+        },
         "notes": notes,
     }
 
@@ -287,7 +348,21 @@ def new_session(request: Request) -> JSONResponse:
     if not STORE.rate_ok(request.client.host if request.client else "unknown"):
         return error(request, "RATE_LIMITED", 429, "请求太频繁")
     session = STORE.new_session()
-    response = JSONResponse({"session_id": session.sid[:8], "ttl_seconds": SESSION_TTL})
+    response = JSONResponse(
+        {
+            # 短号只用于界面/日志对照，不能拿来当凭据
+            "session_id": session.sid[:8],
+            # 完整 token：让页面可以用请求头带会话，不依赖 Cookie 是否被代理丢掉。
+            # 它只是匿名配额凭据，不含任何个人信息；后端两种来源都查同一张会话表。
+            "token": session.sid,
+            "ttl_seconds": SESSION_TTL,
+            "quota": {
+                "translate": QUOTA_TRANSLATE,
+                "transcribe": QUOTA_TRANSCRIBE,
+                "reply": QUOTA_REPLY,
+            },
+        }
+    )
     response.set_cookie(
         "sid",
         session.sid,

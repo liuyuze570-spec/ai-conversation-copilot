@@ -1,0 +1,46 @@
+{
+  "at": "2026-11-09T03:16:17.069Z",
+  "base": "https://en-zh-caption-helper.app.workbuddy.host/?sharecode=X3A6YY6GQH",
+  "results": [
+    {
+      "name": "A1 会话未就绪时提交按钮不可用，并说明原因",
+      "pass": true,
+      "detail": "{\"disabled\":true,\"pendingHint\":true}"
+    },
+    {
+      "name": "A2 会话就绪后按钮自动放开、提示消失",
+      "pass": true,
+      "detail": "{\"disabled\":false,\"pendingHint\":false}"
+    },
+    {
+      "name": "A3 未预置英文拿到真实译文（HTTP 200，不是预置）",
+      "pass": true,
+      "detail": "200 · 水管工会在周三9点40到达 而不是星期四"
+    },
+    {
+      "name": "B0 测试前提：sid Cookie 确实被删掉了",
+      "pass": true,
+      "detail": "hadCookie=true left=0"
+    },
+    {
+      "name": "B1 Cookie 丢失后仍能翻译（请求头这条路生效，且一次就成）",
+      "pass": true,
+      "detail": "请求次数=1 状态=200"
+    },
+    {
+      "name": "B2 没有偷偷换新会话（服务端会话数不变）",
+      "pass": true,
+      "detail": "before=1 after=1"
+    },
+    {
+      "name": "E1 服务端不认识的会话：先 403，自动重建后第二次拿到译文",
+      "pass": true,
+      "detail": "403 → 200"
+    },
+    {
+      "name": "E2 自愈后页面没有停在错误态",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}
