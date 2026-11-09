@@ -53,9 +53,21 @@ status 三态 ok/approx/unknown；界面用文字「规则近似 N 段」+虚点
 真实音频端到端（HTTP 402）、真实模型确认句、真实翻译质量、朗读出声（本机仅 zh 语音）、母语者读音核对（0 条）、听障使用者体验（0 人）、读屏实读、干净机安装、重装、代码签名、10 万条大库。
 材料入口 `docs/交付说明-0.6.2.md`；其余 -v0.6.2：修复与验证/测试记录表/打包核对/数据存储与备份/目标使用者体验/路演材料-5页。
 
-## 网站版（0.7.0-web.2，与桌面端并存）
+## 网站版（0.7.0-web.5，与桌面端并存）
 线上 `https://en-zh-caption-helper.app.workbuddy.host/?sharecode=X3A6YY6GQH`（WorkBuddy Sites，`/api/*` 也要带 sharecode 或先拿 cookie）。
 源码 `webapp/`：`web`(React+Vite，别名 `@shared`→`../../src/shared`) / `server`(FastAPI，进程内 ONNX Opus-MT + faster-whisper)。
 **发布源目录是 `F:/copilot-deploy/app`，不是工程根目录**（平台排除构建产物）：`run.py`(自读 PORT) + `server/` + `web/app/` + `mt/models/` + `server/models/`。
 `.wbapp_*.genie` 的 `localDir` 决定「目录→应用」，同一目录重发链接不变。线上 `reply=mock`（无 Key）。
 共享层 `src/shared/numeric-check.ts`（数字/时间/日期/否定/方向一致性）与 `facts.ts`（事实卡+确认句）两端共用，改动必跑 `npm run test:unit`（15 套 / 1157 条）并重建前端。
+
+### 翻译链路四条不变量（0.7.0-web.5）
+1. **常用语库优先于模型**：`server/phrasebook.py`（391 句 + 248 词 + 75 条拼写变体，`hellow→hello`）命中即返 `mode="phrasebook"`；模型再强也不如查表确定。
+2. **解码必须防退化**：`no_repeat_ngram_size=3`；步数 `max(24, enc_len*4.5+12)`；beam 提前 EOS 后每步按 `seq.shape[0]` 重排 hidden。**整行候选全被屏蔽时必须回退原 logits**，否则 `np.log(-inf)`→nan→argmax 落 EOS，短句被截断。
+3. **每路都要过退化自检**：`looks_degenerate()`（空译/原样吐回/单字重复≥4/同词重复≥3/长度失控）不过就跳过该路，全失败才 `TRANSLATE_FAILED`(422)，不许拿垃圾译文顶。
+4. **日韩俄只能两级转译**：Xenova 无 `opus-mt-{ja,ko,ru}-zh`（实测 404），走 `xx→en→zh`（`engine_mt_multi.CascadeMT`，`mode="local-cascade"`），中间英语回传 `via` 并在界面显示，不冒充直译。
+
+读音：`src/services/pronunciation.ts` 的 `LANG_WORDS`（日/韩/俄）在规则之前命中；`WORD_SOUNDS` 补口语变体。
+自动回复：翻译成功即静默出 3 条（repeat/confirm/ask），模板不许替用户答应；无 Key 必须标「人工模板句，不是 AI 生成」。
+**发布必须显式 `startCmd="python run.py"`**，不传会跑 `main.py` → `SITES_START_FAILED`，原分享链接会短暂打不开（已踩两次）。
+证据 `docs/evidence-web/compare30-web5.json`、`webapp/e2e/verify-online.mjs`（19 项），报告第 13 节。
+实况：30/30 成功、中位 818ms，但只有 2 条译文变化——MQ10 凭空「美元」、NC04 丢否定、DT09 读错「改到」仍在，**整句事实保真没改善**。
