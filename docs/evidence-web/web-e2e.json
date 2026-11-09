@@ -1,12 +1,12 @@
 {
-  "base": "http://127.0.0.1:8000",
+  "base": "http://127.0.0.1:8899",
   "steps": [
     {
       "name": "health",
       "data": {
         "ok": true,
-        "version": "0.7.0-web.4",
-        "build": "web4-2026-11-09",
+        "version": "0.7.0-web.5",
+        "build": "web5-2026-11-09",
         "mode": {
           "translate": "local-onnx",
           "transcribe": "local-whisper",
@@ -23,12 +23,12 @@
           "max_audio_seconds": 60,
           "quota_translate": 40,
           "quota_transcribe": 10,
-          "quota_reply": 15
+          "quota_reply": 40
         },
         "diag": {
-          "boot": "b2fa0fe6",
-          "uptime_s": 49,
-          "sessions": 3,
+          "boot": "cd24417d",
+          "uptime_s": 45,
+          "sessions": 2,
           "session_ttl": 7200,
           "session_transport": [
             "cookie",
@@ -42,7 +42,7 @@
         },
         "runtime": {
           "translate": {
-            "ok": 2,
+            "ok": 4,
             "fail": 0,
             "last_error": ""
           },
@@ -56,6 +56,33 @@
             "fail": 0,
             "last_error": ""
           }
+        },
+        "languages": {
+          "source": {
+            "en": {
+              "ready": true,
+              "pipeline": "en-zh",
+              "label": "英语"
+            },
+            "ja": {
+              "ready": true,
+              "pipeline": "ja-en-zh",
+              "label": "日语"
+            },
+            "ko": {
+              "ready": true,
+              "pipeline": "ko-en-zh",
+              "label": "韩语"
+            },
+            "ru": {
+              "ready": true,
+              "pipeline": "ru-en-zh",
+              "label": "俄语"
+            }
+          },
+          "target": [
+            "zh"
+          ]
         },
         "notes": [
           "reply: provider=未配置模型接口; template=模板句（没有可用模型，界面上要标成模板）"

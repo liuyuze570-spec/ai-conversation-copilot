@@ -1019,3 +1019,39 @@ def looks_degenerate(source: str, translation: str, latin_source: bool = True) -
     if src_words and len(out) > max(24, src_words * 12):
         return True, "too-long"
     return False, ""
+
+
+_CLAUSE_BREAK = re.compile(r"[，,。.；;、！!？?]")
+
+
+def drop_repeated_tail(text: str) -> str:
+    """砍掉模型在句尾复述一遍的残句。
+
+    实测（本地量化 en→zh 模型，确定性复现，不是偶发）：
+
+        We will meet you at three o'clock  ->  三点见,三点
+        See you tomorrow                   ->  明天见,明天
+
+    它不是同词重复（逗号两侧不同字），`no_repeat_ngram` 也抓不到 —— 复述发生在
+    字符层面。判据刻意收得很窄：**只看最后一段**，且它必须完整出现在前面的内容里。
+    这样「我们三点见,三点之前到」不会被误砍（尾段前面没有），「你好,谢谢」也不会。
+
+    宁可漏砍：把用户本来就说的话砍掉，比多留一个残句危险得多。
+    """
+    out = (text or "").strip()
+    if not out:
+        return out
+    breaks = list(_CLAUSE_BREAK.finditer(out))
+    if not breaks:
+        return out
+    parts = [p.strip() for p in _CLAUSE_BREAK.split(out)]
+    parts = [p for p in parts if p]
+    if len(parts) < 2:
+        return out
+    tail = parts[-1]
+    head = "".join(parts[:-1])
+    # 尾段必须够短（不超过前半的一半）才当残句，防止把一整句正常内容砍掉。
+    if tail and tail in head and len(tail) * 2 <= len(head) + 1:
+        trimmed = out[: breaks[-1].start()].strip()
+        return trimmed or out
+    return out

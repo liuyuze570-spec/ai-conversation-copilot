@@ -35,7 +35,8 @@ from engine_mt import MTResult, UpstreamError, build_mt_chain, choose_mt
 from engine_mt_multi import build_cascade, supported_codes
 from engine_mt_onnx import OnnxOpusMT
 from engine_reply import ReplyError, build_reply_chain, choose_reply
-from phrasebook import lookup as phrase_lookup, looks_degenerate
+from phrasebook import drop_repeated_tail, looks_degenerate
+from phrasebook import lookup as phrase_lookup
 
 VERSION = "0.7.0-web.5"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
 BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web5-2026-11-09")
@@ -581,6 +582,10 @@ def translate(request: Request, body: TranslateBody) -> JSONResponse:
         )
     mark_runtime("translate")
     STORE.bump("translate")
+    # 模型有时会在句尾把刚说过的半句再复述一遍（"三点见,三点"、"明天见,明天"）。
+    # 这是**字符级**复述，逗号两侧并不是同一个词，`no_repeat_ngram` 抓不到，
+    # 只能在出来之后剪掉。判据刻意收窄，见 `phrasebook.drop_repeated_tail`。
+    result.translation = drop_repeated_tail(result.translation)
     LOG.info(
         "translate id=%s lang=%s mode=%s chars=%d ms=%d routes=%s",
         request.state.request_id,
