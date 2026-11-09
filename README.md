@@ -308,3 +308,14 @@ npm run dist:win
 - 临时音频只存在于内存 Buffer，不写入磁盘；日志只记状态、错误码、字数与耗时
 - API Key 通过 Electron safeStorage（Windows DPAPI）加密存储，日志自动脱敏
 - 所有识别、翻译、回复仅显示在本机屏幕
+
+## CI/CD 与 AWS 部署（现状：方案已产出，未实跑）
+
+- **CI/CD**：`.github/workflows/ci.yml` 已写好（前端 `typecheck` + 22 套单测，后端 5 个
+  unittest，`test_mt_onnx` 无模型自动 skip）。后端命令已在本机实测 47 条 0 失败。
+  **仓库推到 GitHub 后，push / PR 会自动触发**。目前尚未推送 → 从未在 GitHub Actions 上跑过。
+- **AWS 部署**：`docs/网站AWS部署方案-0.7.0-web.md` + `terraform/`（ECS Fargate + ALB +
+  EFS 持久化反馈库）。**未真实部署**（无 AWS 账号凭据）。
+
+> 如实说明：这两项目前是「方案 + 配置模板」，不是「已上线的运行证据」。要真正跑通，
+> 需要把本仓库推送到 GitHub（CI），以及一个 AWS 账号（部署）。
