@@ -1,0 +1,77 @@
+name: CI
+
+# 每次 push / PR 都跑：前端 typecheck + 22 套单测，后端 5 个 unittest。
+# 说明（如实）：本仓库尚未推到 GitHub，此工作流文件在本地写好、未在 GitHub
+# Actions 上实跑过。推送到 GitHub 后会自动生效。
+#
+# 为什么分两个 job：
+#  - 前端是 Electron + React，只依赖 Node，跑 typecheck 和纯 Node 单测（22 套，
+#    见根 package.json 的 test:unit，全部是 Node 脚本，不启动 Electron）。
+#  - 后端是 FastAPI，测试里 `import app` 会连带 import onnxruntime /
+#    faster-whisper / ctranslate2，需要完整装 requirements.txt。
+#
+# 后端模型说明：test_mt_onnx.py 需要本地 ONNX 模型（100MB+，不进仓库），
+# 无模型时它自己会 unittest.SkipTest 跳过，不影响 CI 绿。
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  # 允许手动触发。
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    name: 前端 typecheck + 单测
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: TypeScript 类型检查（前端 + 主进程）
+        run: npm run typecheck
+
+      - name: 单元测试（22 套 Node 脚本，不启动 Electron）
+        run: npm run test:unit
+
+  backend:
+    name: 后端 unittest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webapp/server
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.12：ctranslate2 / onnxruntime / faster-whisper 的轮子覆盖最全。
+      # 本机是 3.13 已实测跑通，3.12 是更保守的 CI 选择。
+      - name: 安装 Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装后端依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 后端测试里 `import app` 会读环境变量决定模型目录；
+      # 未设置时走默认相对路径，无模型会优雅降级（available=False）。
+      # test_mt_onnx 无模型自动 SkipTest，test_backend_hardening 用 TestClient
+      # 默认不触发 startup，不会真正加载模型。
+      - name: 运行后端 unittest
+        run: |
+          python -m unittest test_feedback test_phrasebook test_backend_hardening test_capture test_mt_onnx -v
