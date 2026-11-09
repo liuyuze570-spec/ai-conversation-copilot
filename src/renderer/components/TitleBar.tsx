@@ -95,15 +95,12 @@ export function TitleBar({
       )}
 
       <div className="no-drag flex shrink-0 items-center gap-0.5">
-        <IconButton
-          label={captureButtonLabel(status)}
-          hint={captureButtonAria(status)}
-          onClick={onToggleListening}
-          tone={listening ? 'accent' : 'default'}
-        >
-          {listening ? <IconPause /> : <IconPlay size={12} />}
-        </IconButton>
-        <span className="mx-0.5 h-3.5 w-px bg-line-soft" aria-hidden />
+        {/*
+          * 0.6.3：标题栏不再放「开始/停止采集」按钮。
+          * 它和音源栏的大主按钮、空状态卡片里的「开始监听」指向同一动作，
+          * 三个入口让用户不知道该点哪个。现在采集只有一个主入口（音源栏大按钮，
+          * 快捷键 Alt+P 仍有效），标题栏只保留窗口控制。
+          */}
         {/*
           * 旧版这个按钮的可访问名称只有一个字母「T」（按钮里就写着 T）——
           * 读屏会念「T 按钮」，没人知道它是窗口置顶。现在给完整名称 + 开关状态。

@@ -90,19 +90,26 @@ export function ReplyCard({
 
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className={`chip ${tone.chip}`}>{KIND_LABEL[scenario][suggestion.kind]}</span>
-        <div className="no-drag flex shrink-0 items-center gap-0.5">
+        {/*
+          * 0.6.3：操作按钮放大到 32px、间距拉开。
+          * 旧版「播放 / 0.7x / 分句 / 给对方看」挤在标题行右侧，只有 24px 高、
+          * 10px 小字 —— 听障使用者常要反复点这几个键（念一遍、慢速跟一遍），
+          * 太小根本点不准。现在把「给对方看」挪到正文下方单独一行，标题行
+          * 只留三个读音键，全部加到 32px 可点区域。
+          */}
+        <div className="no-drag flex shrink-0 items-center gap-1">
           <button
             onClick={onSpeak}
             title="播放发音"
-            className={`grid h-6 w-6 place-items-center rounded-lg transition-colors duration-150
-              ${speaking ? 'bg-accent/25 text-accent-soft' : 'text-white/45 hover:bg-ink-700 hover:text-white'}`}
+            className={`grid h-8 w-8 place-items-center rounded-lg transition-colors duration-150
+              ${speaking ? 'bg-accent/25 text-accent-soft' : 'text-white/55 hover:bg-ink-700 hover:text-white'}`}
           >
-            <IconSpeaker size={13} />
+            <IconSpeaker size={16} />
           </button>
           <button
             onClick={onSpeakSlow}
             title="慢速播放（0.7x），方便跟着念"
-            className="grid h-6 place-items-center rounded-lg px-1.5 text-[10px] text-white/40
+            className="grid h-8 place-items-center rounded-lg px-2 text-[12px] font-medium text-white/55
               transition-colors duration-150 hover:bg-ink-700 hover:text-white"
           >
             0.7x
@@ -111,26 +118,10 @@ export function ReplyCard({
             onClick={onSpeakPhrases}
             data-speak-phrases
             title="短语重复：按真实分块一段一段念，每段之间停一下"
-            className="grid h-6 place-items-center rounded-lg px-1.5 text-[10px] text-white/40
+            className="grid h-8 place-items-center rounded-lg px-2 text-[12px] font-medium text-white/55
               transition-colors duration-150 hover:bg-ink-700 hover:text-white"
           >
             分句
-          </button>
-          {/*
-            * 双面沟通卡。
-            *
-            * 听障使用者真正卡住的地方不是「看不懂」，而是「我说不出口，也不想把
-            * 手机屏幕翻给对方看我的释义」。所以这里给一个专门的界面大小：
-            * 自己那面带释义和读音提示，翻过去只有一句大字原文 + 一个朗读键。
-            */}
-          <button
-            onClick={() => setShowCard(true)}
-            data-reply-show
-            title="打开双面卡：给对方看大字原文，自己这面看释义和读音提示"
-            className="ml-auto grid h-6 place-items-center rounded-lg px-1.5 text-[10px]
-              text-accent-soft/80 transition-colors duration-150 hover:bg-accent/15 hover:text-accent-soft"
-          >
-            给对方看
           </button>
         </div>
       </div>
@@ -228,7 +219,24 @@ export function ReplyCard({
         />
       )}
 
-      <div className="mt-2 flex flex-wrap gap-1">
+      {/*
+        * 0.6.3：底部操作区。把「给对方看」从标题行右侧挪到这里，做成一个
+        * 整宽、34px 高的独立按钮 —— 这是听障使用者最常点的「把大字原文翻给
+        * 对方看」，不该藏在标题行右侧的小字里。细化按钮也放大到 30px 可点
+        * 区域、字号 12px。
+        */}
+      <button
+        onClick={() => setShowCard(true)}
+        data-reply-show
+        title="打开双面卡：给对方看大字原文，自己这面看释义和读音提示"
+        className="no-drag mt-2 flex h-[34px] w-full items-center justify-center gap-1.5 rounded-lg
+          border border-accent/30 bg-accent/10 text-[12.5px] font-medium text-accent-soft
+          transition-colors duration-150 hover:bg-accent/20 hover:text-accent-soft"
+      >
+        给对方看大字原文
+      </button>
+
+      <div className="mt-1.5 flex gap-1.5">
         <MiniButton onClick={() => onRefine('simplify')}>简单一点</MiniButton>
         <MiniButton onClick={() => onRefine('rephrase')}>换一种说法</MiniButton>
         <MiniButton onClick={() => onRefine('natural')}>更自然</MiniButton>
@@ -241,8 +249,8 @@ function MiniButton({ children, onClick }: { children: React.ReactNode; onClick:
   return (
     <button
       onClick={onClick}
-      className="no-drag rounded-lg border border-line-soft px-2 py-[3px] text-[11px] text-white/50
-        transition-colors duration-150 hover:border-line hover:bg-ink-800 hover:text-white/85"
+      className="no-drag flex-1 rounded-lg border border-line-soft px-1 py-2 text-[12px] text-white/60
+        transition-colors duration-150 hover:border-line hover:bg-ink-800 hover:text-white/90"
     >
       {children}
     </button>

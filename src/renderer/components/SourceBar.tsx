@@ -159,14 +159,15 @@ export function SourceBar({
       data-audio-live={hasSignal ? 'true' : 'false'}
       data-capture-phase={phase}
       data-capture-active={running ? 'true' : 'false'}
-      className="relative shrink-0 border-b border-line-soft bg-ink-900/70 px-3 py-2"
+      className="relative shrink-0 border-b border-line-soft bg-ink-900/70 px-3 py-2.5"
     >
+      {/* 音源 + 状态：合成一行，去掉「未开始采集」的重复。 */}
       <div className="flex items-center gap-2">
-        <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-accent/15 text-accent-soft">
-          <IconWave size={11} />
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-accent/15 text-accent-soft">
+          <IconWave size={13} />
         </span>
         <div className="min-w-0 flex-1 leading-tight">
-          <p data-source-label className="truncate text-[11.5px] font-medium text-white/85">
+          <p data-source-label className="truncate text-[12px] font-medium text-white/90">
             {sourceText}
             <span className="ml-1 font-normal text-white/45">
               · {sourceModeLabel(settings.audio.sourceMode).replace(/（.*）/, '')}
@@ -176,38 +177,42 @@ export function SourceBar({
           <p
             data-audio-status
             data-phase={ui.phase}
-            className={`flex min-w-0 items-center gap-1.5 text-[10.5px] ${toneText}`}
+            className={`flex min-w-0 items-center gap-1.5 text-[11px] ${toneText}`}
             title={ui.detail}
           >
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot}`} aria-hidden />
             <span className="truncate">{ui.label}</span>
           </p>
         </div>
-
-        {/* 只在真需要的时候出现：一直挂着会让界面显得「总有毛病」。 */}
-        {ui.showReconnect && (
-          <button
-            type="button"
-            data-reconnect
-            onClick={onReconnect}
-            aria-label="重新连接音频设备"
-            className="no-drag shrink-0 rounded-lg border border-warn/40 bg-warn/10 px-2 py-1
-              text-[10.5px] font-semibold text-warn transition-colors hover:bg-warn/20"
-          >
-            重新连接
-          </button>
-        )}
       </div>
 
+      {/*
+        * 0.6.3 主按钮：占满整行、36px 高，一眼就能点。
+        * 旧版把它和字号控件挤在一行，三个入口（标题栏 ▶、卡片「开始监听」、
+        * 这里）指向同一动作，用户不知道该点哪个 —— 现在只保留这一个主入口。
+        */}
+      <button
+        type="button"
+        data-listen-toggle
+        data-capture-action={running ? 'stop' : 'start'}
+        onClick={onToggleListening}
+        aria-label={captureButtonAria(status)}
+        className={`no-drag mt-2 flex h-9 w-full items-center justify-center gap-1.5 rounded-xl text-[13px]
+          font-semibold transition-colors ${
+            running
+              ? 'border border-danger/45 bg-danger/10 text-danger hover:bg-danger/20'
+              : 'bg-accent text-white hover:bg-accent-dim'
+          }`}
+      >
+        {buttonLabel}
+        <span className="text-[10px] font-normal opacity-60">Alt + P</span>
+      </button>
+
       {/* 状态说明：一句话讲清「现在为什么是这样、下一步做什么」。 */}
-      <p data-audio-detail className="mt-1 text-[10px] leading-relaxed text-white/45">
+      <p data-audio-detail className="mt-1.5 text-[10px] leading-relaxed text-white/45">
         {ui.detail}
       </p>
 
-      {/*
-        * 「处理中」是独立于采集的第七个状态：采集还在跑，但翻译/回复正在算。
-        * 用 aria-live 播报一次，不跟着字幕流逐句播，避免读屏被淹没。
-        */}
       {phase === 'processing' && (
         <p
           data-processing-status
@@ -220,39 +225,31 @@ export function SourceBar({
         </p>
       )}
 
-      <div className="mt-1.5 flex items-center gap-1.5">
-        {/*
-          * 0.6.3 主按钮：文字直接说「开始采集 / 停止采集」，不再用「暂停」。
-          * 旧版在「采集中，暂未收到声音」时显示「暂停」，点了却不停止，
-          * 是本次修复的核心缺陷（见 shared/capture-state.ts）。
-          */}
+      {/* 重新连接：只在失败/掉线时出现，不再常驻。 */}
+      {ui.showReconnect && (
         <button
           type="button"
-          data-listen-toggle
-          data-capture-action={running ? 'stop' : 'start'}
-          onClick={onToggleListening}
-          aria-label={captureButtonAria(status)}
-          className={`no-drag shrink-0 rounded-lg px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${
-            running
-              ? 'border border-danger/45 bg-danger/10 text-danger hover:bg-danger/20'
-              : 'bg-accent text-white hover:bg-accent-dim'
-          }`}
+          data-reconnect
+          onClick={onReconnect}
+          aria-label="重新连接音频设备"
+          className="no-drag mt-1.5 w-full rounded-lg border border-warn/40 bg-warn/10 py-1.5
+            text-[11px] font-semibold text-warn transition-colors hover:bg-warn/20"
         >
-          {buttonLabel}
+          重新连接音频设备
         </button>
+      )}
 
-        <span className="mx-0.5 h-3.5 w-px bg-line-soft" aria-hidden />
-
-        {/*
-          * 「调整对象」三选一。用 aria-pressed 而不是 role=radio：
-          * 它们是三个独立开关中的互斥集合，按钮语义对读屏更直观
-          * （会念「按下 / 未按下」），也能直接用 Tab 逐个走过去。
-          */}
+      {/*
+        * 字号控件独立成一行，点击目标加大到 32px（A-/A+）。
+        * 旧版 A-/A+ 只有 24px 且和三个字号目标、高对比挤同一行，
+        * 手指/鼠标都难点。现在「改哪个」和「改多少」分两段排。
+        */}
+      <div className="mt-2 flex items-center gap-2">
         <div
           role="group"
           aria-label="选择要调整字号的文字"
           data-font-target-group
-          className="flex items-center gap-0.5 rounded-lg border border-line-soft bg-ink-850 p-0.5"
+          className="flex flex-1 items-center gap-0.5 rounded-lg border border-line-soft bg-ink-850 p-0.5"
         >
           {FONT_TARGETS.map((option) => {
             const active = option.value === target;
@@ -265,7 +262,7 @@ export function SourceBar({
                 aria-label={`调整${option.label}`}
                 title={option.hint}
                 onClick={() => setTarget(option.value)}
-                className={`no-drag rounded-md px-1.5 py-[3px] text-[10px] transition-colors ${
+                className={`no-drag flex-1 rounded-md px-1 py-1.5 text-[11px] font-medium transition-colors ${
                   active ? 'bg-accent/25 text-white' : 'text-white/50 hover:text-white/80'
                 }`}
               >
@@ -275,68 +272,66 @@ export function SourceBar({
           })}
         </div>
 
-        {/* A− / A+ 各自带完整名称和当前值，读屏念「缩小译文，当前 24 像素」。 */}
-        <button
-          type="button"
-          data-font-dec
-          onClick={() => stepFont(-1)}
-          disabled={font <= FONT_MIN}
-          aria-label={`缩小${targetMeta.label}，当前 ${font} 像素`}
-          className="no-drag grid h-6 w-6 place-items-center rounded-lg border border-line
-            bg-ink-850 text-[13px] text-white/75 transition-colors hover:bg-ink-800
-            disabled:opacity-30"
-        >
-          A−
-        </button>
-        <span
-          data-font-value={font}
-          aria-live="polite"
-          className="tnum w-8 shrink-0 text-center text-[10px] text-white/55"
-        >
-          {font}
-        </span>
-        <button
-          type="button"
-          data-font-inc
-          onClick={() => stepFont(1)}
-          disabled={font >= FONT_MAX}
-          aria-label={`放大${targetMeta.label}，当前 ${font} 像素`}
-          className="no-drag grid h-6 w-6 place-items-center rounded-lg border border-line
-            bg-ink-850 text-[13px] text-white/75 transition-colors hover:bg-ink-800
-            disabled:opacity-30"
-        >
-          A+
-        </button>
-
-        <button
-          type="button"
-          data-contrast-toggle
-          aria-pressed={settings.subtitle.highContrast}
-          aria-label="高对比显示"
-          onClick={() =>
-            void update({
-              subtitle: { ...settings.subtitle, highContrast: !settings.subtitle.highContrast },
-            })
-          }
-          className={`no-drag rounded-lg border px-2 py-1 text-[10.5px] font-medium transition-colors ${
-            settings.subtitle.highContrast
-              ? 'border-accent/50 bg-accent/20 text-accent-soft'
-              : 'border-line bg-ink-850 text-white/60 hover:bg-ink-800 hover:text-white/85'
-          }`}
-        >
-          高对比
-        </button>
-
-        {/*
-          * 字号很大时把「读」这件事摆到最前面：提示可以折叠底部的操作区。
-          * 这不是限制，只是让用户知道为什么下面的按钮变少了。
-          */}
-        {needsCompactChrome(maxFontSize(prefs)) && (
-          <span data-compact-chrome className="ml-auto text-[9.5px] text-white/35">
-            大字模式
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            data-font-dec
+            onClick={() => stepFont(-1)}
+            disabled={font <= FONT_MIN}
+            aria-label={`缩小${targetMeta.label}，当前 ${font} 像素`}
+            className="no-drag grid h-8 w-8 place-items-center rounded-lg border border-line
+              bg-ink-850 text-[15px] font-semibold text-white/80 transition-colors hover:bg-ink-800
+              disabled:opacity-30"
+          >
+            A−
+          </button>
+          <span
+            data-font-value={font}
+            aria-live="polite"
+            className="tnum w-7 shrink-0 text-center text-[11px] text-white/60"
+          >
+            {font}
           </span>
-        )}
+          <button
+            type="button"
+            data-font-inc
+            onClick={() => stepFont(1)}
+            disabled={font >= FONT_MAX}
+            aria-label={`放大${targetMeta.label}，当前 ${font} 像素`}
+            className="no-drag grid h-8 w-8 place-items-center rounded-lg border border-line
+              bg-ink-850 text-[15px] font-semibold text-white/80 transition-colors hover:bg-ink-800
+              disabled:opacity-30"
+          >
+            A+
+          </button>
+          <button
+            type="button"
+            data-contrast-toggle
+            aria-pressed={settings.subtitle.highContrast}
+            aria-label="高对比显示"
+            title="高对比显示（黑白高反差，弱视更清楚）"
+            onClick={() =>
+              void update({
+                subtitle: { ...settings.subtitle, highContrast: !settings.subtitle.highContrast },
+              })
+            }
+            className={`no-drag ml-1 grid h-8 place-items-center rounded-lg border px-2 text-[11px]
+              font-medium transition-colors ${
+                settings.subtitle.highContrast
+                  ? 'border-accent/50 bg-accent/20 text-accent-soft'
+                  : 'border-line bg-ink-850 text-white/60 hover:bg-ink-800 hover:text-white/85'
+              }`}
+          >
+            高对比
+          </button>
+        </div>
       </div>
+
+      {needsCompactChrome(maxFontSize(prefs)) && (
+        <span data-compact-chrome className="mt-1 block text-[9.5px] text-white/35">
+          大字模式：底部按钮已精简
+        </span>
+      )}
 
       {/* 2px 电平线：纯装饰性反馈，读屏不念（aria-hidden），结论看上面的状态文字。 */}
       <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] bg-ink-800">

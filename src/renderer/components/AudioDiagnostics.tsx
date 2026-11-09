@@ -78,13 +78,8 @@ export function AudioDiagnostics({ onListen }: { onListen: () => void }) {
   if (status === 'idle' || status === 'paused') {
     return (
       <Shell tone="neutral" title="还没有开始监听">
-        点下面的按钮开始采集电脑的系统声音。
-        <br />
-        它能听到<strong className="text-white/80">任何软件</strong>正在播放的内容——
+        点上方蓝色「开始采集」按钮，就能听到<strong className="font-medium text-white/75">任何软件</strong>正在播放的内容——
         浏览器、哔哩哔哩、播放器、会议、网课都一样。
-        <Actions>
-          <Primary onClick={onListen}>开始监听系统声音</Primary>
-        </Actions>
       </Shell>
     );
   }

@@ -821,6 +821,28 @@ if (!gotLock) {
     }
 
     // Dev helper: COPILOT_SCREENSHOT=<path> captures the overlay and exits.
+    if (process.env.COPILOT_SHOT) {
+      setTimeout(async () => {
+        try {
+          // 先接受隐私说明（若存在），进入主界面再截图。
+          await win.webContents.executeJavaScript(
+            `(async () => {
+              const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+              const accept = document.querySelector('[data-privacy-accept]');
+              if (accept) { accept.click(); await sleep(700); }
+            })()`,
+          );
+          const image = await win.webContents.capturePage();
+          fs.writeFileSync(process.env.COPILOT_SHOT as string, image.toPNG());
+          logger.info('App', `shot saved to ${process.env.COPILOT_SHOT}`);
+        } catch (error) {
+          logger.warn('App', `shot failed: ${String(error)}`);
+        }
+        setTimeout(() => app.quit(), 200);
+      }, 3000);
+    }
+
+    // Dev helper: COPILOT_SCREENSHOT=<path> captures the overlay and exits.
     if (process.env.COPILOT_SCREENSHOT) {
       setTimeout(async () => {
         try {

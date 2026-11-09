@@ -446,14 +446,14 @@ export function SubtitleList({
             {saveStateLabel(saveState, pendingCount)}
           </span>
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
             data-new-session
             onClick={onNewSession}
             title="把当前对话存成一条记录，然后开一段新对话"
             aria-label="把当前对话存成记录并开始新对话"
-            className="rounded-lg px-1.5 py-0.5 text-[10px] text-white/45 transition-colors hover:bg-ink-700 hover:text-white/80"
+            className="rounded-lg px-2 py-1 text-[11px] font-medium text-white/55 transition-colors hover:bg-ink-700 hover:text-white/85"
           >
             ＋新记录
           </button>
@@ -463,7 +463,7 @@ export function SubtitleList({
             onClick={onOpenRecords}
             title="查看对话记录"
             aria-label="查看对话记录"
-            className="rounded-lg px-1.5 py-0.5 text-[10px] text-white/45 transition-colors hover:bg-ink-700 hover:text-white/80"
+            className="rounded-lg px-2 py-1 text-[11px] font-medium text-white/55 transition-colors hover:bg-ink-700 hover:text-white/85"
           >
             记录{recordsCount ? ` ${recordsCount}` : ''}
           </button>
@@ -472,7 +472,7 @@ export function SubtitleList({
             onClick={clear}
             title="清空当前对话（不影响已保存的记录）"
             aria-label="清空当前对话，不影响已保存的记录"
-            className="rounded-lg px-1.5 py-0.5 text-[10px] text-white/35 transition-colors hover:bg-ink-700 hover:text-white/70"
+            className="rounded-lg px-2 py-1 text-[11px] text-white/40 transition-colors hover:bg-ink-700 hover:text-white/75"
           >
             清空
           </button>

@@ -169,8 +169,9 @@ export function QuickActions({
           aria-controls="quick-actions-more"
           onClick={() => setMore((prev) => !prev)}
           title={more ? '收起场景、语气和输入框' : '展开场景、语气和输入框'}
-          className={`no-drag shrink-0 rounded-xl px-2 py-1 text-[11px] text-white/40
-            transition-colors duration-150 hover:bg-ink-850 hover:text-white/70 ${
+          className={`no-drag shrink-0 rounded-xl border border-line-soft bg-ink-850 px-2.5 py-1.5
+            text-[11.5px] font-medium text-white/55 transition-colors duration-150
+            hover:border-line hover:bg-ink-800 hover:text-white/80 ${
               hasSuggestions ? '' : 'ml-auto'
             }`}
         >
@@ -349,8 +350,8 @@ function ChipButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="no-drag rounded-xl border border-line-soft bg-ink-850 px-2 py-1 text-[11.5px]
-        text-white/60 transition-colors duration-150 hover:border-line hover:bg-ink-800
+      className="no-drag rounded-xl border border-line-soft bg-ink-850 px-2.5 py-2 text-[12px]
+        font-medium text-white/70 transition-colors duration-150 hover:border-line hover:bg-ink-800
         hover:text-white disabled:opacity-30"
     >
       {children}
