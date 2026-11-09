@@ -40,6 +40,10 @@ jobs:
 
       - name: 安装依赖
         run: npm ci
+        env:
+          # lock 里曾混入 npmmirror 镜像（已改回官方）；这里再显式钉到官方源，
+          # 避免 CI 环境的任何镜像配置把 npm ci 引到不可达的国内镜像。
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
 
       - name: TypeScript 类型检查（前端 + 主进程）
         run: npm run typecheck
