@@ -401,6 +401,29 @@ export function planReplies(input: ReplyPlanInput, phon: (text: string) => strin
     }
   }
 
+  /*
+   * 第三张兜底：请对方打字。
+   *
+   * 听障使用者最常见的处境不是「没听清」，是「语音本身就不是我的通道」。
+   * 这条对任何输入都成立，不冒犯、不暴露听力状况，而且真的解决问题。
+   * 它排在最后：有具体事实时，前三张都更值得占位置。
+   */
+  if (out.length < 3 && english && !out.some((card) => card.id === 'ask-type')) {
+    out.push(
+      makeReply(
+        {
+          id: 'ask-type',
+          kind: 'clarify',
+          purpose: '请对方打字（语音不是唯一通道）',
+          en: 'Sorry, could you type that instead? It is easier for me.',
+          zh: '不好意思，能打字给我吗？这样更方便。',
+          why: '不说「我听不见」，只说「打字更方便」',
+        },
+        phon,
+      ),
+    );
+  }
+
   return out.slice(0, 3);
 }
 
