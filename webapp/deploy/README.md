@@ -12,7 +12,7 @@
 | 本地起服务、网页 + 翻译 + 识别全通 | **已实测** | 见 `docs/网站测试报告-0.7.0-web.md` |
 | 精简发布目录（256MB）能独立跑 | **已实测** | 从 `/f/copilot-release/web-0.7.0` 启动，首页 200、翻译 615ms、识别 419ms |
 | `Dockerfile` | **已写好，未构建** | 本机 Docker Desktop 未运行，`docker info` 连不上守护进程 |
-| 公网 HTTPS 地址 | **已上线** | WorkBuddy Sites 发布：`https://en-zh-caption-helper.app.workbuddy.host/?sharecode=X3A6YY6GQH`；2026-11-09 09:52 实测首页 200 / health 200 |
+| 公网 HTTPS 地址 | **已上线** | WorkBuddy Sites 发布：`https://en-zh-caption-helper.app.workbuddy.host/?sharecode=X3A6YY6GQH`；2026-11-09 10:07 重新发布（含数词与中文确认句修复），首页 200 / health 200 / 真实翻译 809ms |
 | GitHub Actions | **只准备了工作流文件，未跑过** | 不能写成「CI/CD 已完成」 |
 
 ---
