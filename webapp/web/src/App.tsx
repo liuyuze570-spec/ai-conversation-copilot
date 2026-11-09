@@ -437,6 +437,12 @@ export function App() {
             {sourceBadge}
             {sttBadge}
           </div>
+          {/* 「配了真实后端」和「真的调通了」是两件事：错 Key 时前者仍为真。 */}
+          {state.health?.real.translate && state.health?.verified?.translate === false && state.translateMode !== 'preset' ? (
+            <p className="muted mt-1 text-[11px] text-white/45" data-testid="unverified-hint">
+              服务端已配置翻译模型，但这一页还没成功调通过；下面这条结果如果出来了，说明已经通了。
+            </p>
+          ) : null}
           <p
             className="mt-2 whitespace-pre-wrap font-medium leading-snug text-white"
             style={{ fontSize: originalFont }}

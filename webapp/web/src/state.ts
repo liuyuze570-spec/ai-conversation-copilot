@@ -211,6 +211,12 @@ export const useApp = create<State>((set, get) => ({
         facts: analyze(text, result.translation),
         numericCheck: checkNumericConsistency(text, result.translation),
       });
+      // 第一次真的调通之后，把「尚未验证」的提示收掉（health 里 verified 变了）。
+      if (get().health?.verified?.translate === false) {
+        void getHealth()
+          .then((health) => set({ health, healthError: null }))
+          .catch(() => {});
+      }
     } catch (error) {
       if (get().version !== next) return;
       if (error instanceof DOMException && error.name === 'AbortError') return;

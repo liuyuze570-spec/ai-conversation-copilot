@@ -24,8 +24,13 @@ export interface Health {
   version: string;
   mode: { translate: TranslateMode; transcribe: TranscribeMode; reply: TranslateMode };
   limits: HealthLimits;
-  /** 是否具备真实能力（至少一路不是 mock）。界面据此显示「真实」还是「预置」。 */
+  /** 是否**配置了**真实能力（至少一路不是 mock）。配置了不等于调通了。 */
   real: { translate: boolean; transcribe: boolean; reply: boolean };
+  /**
+   * 是否真的成功返回过至少一次。
+   * 配了一个错 Key 时 `real` 仍是 true，只有这里会是 false —— 界面要分开显示。
+   */
+  verified?: { translate: boolean; transcribe: boolean; reply: boolean };
   notes: string[];
 }
 

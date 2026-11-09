@@ -34,8 +34,8 @@ from engine_asr import ASRError, build_asr_chain, choose_asr, probe_seconds
 from engine_mt import UpstreamError, build_mt_chain, choose_mt
 from engine_reply import ReplyError, build_reply_chain, choose_reply
 
-VERSION = "0.7.0-web.3"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
-BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web3-2026-11-09")
+VERSION = "0.7.0-web.4"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
+BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web4-2026-11-09")
 # 每个进程一个短 ID：用来判「请求是不是被不同实例/重启后的进程接走的」。
 # 不含任何用户数据，可以安全地出现在 /api/health 里。
 BOOT_ID = secrets.token_hex(4)
@@ -162,6 +162,25 @@ class Store:
 
 
 STORE = Store()
+
+# 「配置好了」不等于「真的能用」。这里只记真实调用发生过什么：
+# ok 过一次才算 verified；失败只留错误码，不留正文。
+RUNTIME: dict[str, dict[str, object]] = {
+    "translate": {"ok": 0, "fail": 0, "last_error": ""},
+    "transcribe": {"ok": 0, "fail": 0, "last_error": ""},
+    "reply": {"ok": 0, "fail": 0, "last_error": ""},
+}
+RUNTIME_LOCK = threading.Lock()
+
+
+def mark_runtime(kind: str, error_code: str | None = None) -> None:
+    with RUNTIME_LOCK:
+        slot = RUNTIME[kind]
+        if error_code:
+            slot["fail"] = int(slot["fail"]) + 1
+            slot["last_error"] = error_code
+        else:
+            slot["ok"] = int(slot["ok"]) + 1
 MT_CHAIN: list[object] = []
 MT_DETAIL: dict[str, str] = {}
 ASR_CHAIN: list[object] = []
@@ -339,6 +358,10 @@ def health() -> dict:
             "session_ttl": SESSION_TTL,
             "session_transport": ["cookie", "header"],
         },
+        # `real` 只说明「配了真实后端」；`verified` 才是「这一路真的成功返回过」。
+        # 配了一个错 Key 时 real 仍是 true，所以两者必须分开看。
+        "verified": {kind: int(slot["ok"]) > 0 for kind, slot in RUNTIME.items()},
+        "runtime": RUNTIME,
         "notes": notes,
     }
 
@@ -406,9 +429,11 @@ def translate(request: Request, body: TranslateBody) -> JSONResponse:
     try:
         result = backend.translate(text)  # type: ignore[attr-defined]
     except UpstreamError as failure:
+        mark_runtime("translate", failure.code)
         if failure.code == "MODE_DISABLED":
             return error(request, "NO_PRESET", 503, "演示模式下没有这句的预置译文")
         return error(request, failure.code, failure.status, "上游模型失败")
+    mark_runtime("translate")
     STORE.bump("translate")
     LOG.info(
         "translate id=%s mode=%s chars=%d ms=%d",
@@ -465,10 +490,12 @@ async def transcribe(
     try:
         result = backend.transcribe(data, suffix, language)  # type: ignore[attr-defined]
     except ASRError as failure:
+        mark_runtime("transcribe", failure.code)
         return error(request, failure.code, failure.status, "识别失败")
     # 探测失败（拿不到时长）时，这里再兜一次底。
     if result.duration_seconds and result.duration_seconds > MAX_AUDIO_SECONDS:
         return error(request, "TOO_LARGE", 413, f"录音超过 {MAX_AUDIO_SECONDS} 秒")
+    mark_runtime("transcribe")
     STORE.bump("transcribe")
     LOG.info(
         "transcribe id=%s mode=%s bytes=%d ms=%d",
@@ -519,7 +546,9 @@ def reply(request: Request, body: ReplyBody) -> JSONResponse:
     except (UpstreamError, ReplyError) as failure:
         # 两套后端抛的异常类型不一样：ProviderReply 抛 ReplyError，
         # 旧代码只捕 UpstreamError，于是「上游超时」会变成 500 未捕获异常。
+        mark_runtime("reply", failure.code)
         return error(request, failure.code, failure.status, "回复建议失败")
+    mark_runtime("reply")
     STORE.bump("reply")
     return JSONResponse(
         {
