@@ -71,3 +71,10 @@ status 三态 ok/approx/unknown；界面用文字「规则近似 N 段」+虚点
 **发布必须显式 `startCmd="python run.py"`**，不传会跑 `main.py` → `SITES_START_FAILED`，原分享链接会短暂打不开（已踩两次）。
 证据 `docs/evidence-web/compare30-web5.json`、`webapp/e2e/verify-online.mjs`（19 项），报告第 13 节。
 实况：30/30 成功、中位 818ms，但只有 2 条译文变化——MQ10 凭空「美元」、NC04 丢否定、DT09 读错「改到」仍在，**整句事实保真没改善**。
+
+### P0 事实保真四条不变量（0.7.0-web.7，A/B/C 三句已闭环）
+1. **币种只看原话**：`currencyOf(originalText)`；原话没提 → 事实卡「币种未说明」，译文补的币种由 `strip_invented_currency` 剪掉并进 `corrections[]` 界面黄条点名——**只减不增，不悄悄替换**。
+2. **改期是三张卡**：`role`=origin/current/duration；旧安排不进确认句；译文丢「改到」由 `express_reschedule` 补回。确认句模板 `…now X instead of Y…`。
+3. **合并配对先对齐否定+role 再数值再顺序**：中文日期抽取顺序≠出现顺序，盲配会把否定标记串到当前值上（周四被划掉、周二当有效）。裸数字金额用**字符区间**排时间（`2 p.m.` 的 2 不是金额）。
+4. **回复卡本地拼**（`reply-plan.ts`）：确认/澄清/礼貌 + 兜底「请对方打字」，翻译成功即出、不等模型；英文句只用 `labelEn`（中文类名「金额」漏进英文句实测发生过）；近音默认隐藏有开关；无 Key 时界面标「规则生成」。
+测试：`.dev/p0-fidelity-unit.mjs` 35 条（A/B/C+变体，挂进 test:unit，现 16 套）+ `webapp/e2e/p0-verify.mjs` 真浏览器 24 项（本地/公网全 PASS）。报告第 14 节；官方赛题文件未找到（待核实）、讲述人实读与真实用户试用均 0。
