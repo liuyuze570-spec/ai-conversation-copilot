@@ -1,0 +1,13 @@
+# 最小部署依赖（EC2 裸机演示模式用）。
+# 只装后端启动与「常用语查表 + mock 兜底」真正需要的包，不装模型重包。
+# 真实语音识别（faster-whisper/ctranslate2/av）与真实翻译（onnxruntime/tokenizers）
+# 都是延迟导入：只要用环境变量把链路切到 provider,mock，它们就完全不会被加载，
+# 因此部署不需要这些又大又容易在 Python 3.9 上崩溃的包。
+# 对比：完整版见 requirements.txt（本机 Python 3.12 实测版）。
+
+fastapi==0.162.2
+uvicorn==0.54.0
+python-multipart==0.0.33
+httpx==0.28.1
+pydantic==2.14.3
+numpy==2.5.4
