@@ -89,6 +89,10 @@ interface State {
    * `planReplies()` 按当前事实**本地**拼出来（断网也有）。
    */
   replyCards: PlannedReply[];
+  /** 最近几句原文，供回复卡判断话题；手动输入时为空。 */
+  replyContext: string[];
+  /** 标签页整段译文直接生成回复：不再翻一次，但要把全量上下文带进来。 */
+  usePassageForReply: (text: string, translation: string, context: string[]) => void;
   /** 用户改过的回复：中文不再是原句的意思，界面要标出来。 */
   editReply: (id: string, en: string) => void;
   version: number;
@@ -97,7 +101,7 @@ interface State {
   retrySession: () => Promise<void>;
   setOriginal: (text: string) => void;
   setSourceLang: (lang: SourceLanguage) => void;
-  translate: (text: string, source: SourceKind, presetTranslation?: string) => Promise<void>;
+  translate: (text: string, source: SourceKind, presetTranslation?: string, context?: string[]) => Promise<void>;
   transcribe: (blob: Blob, filename: string) => Promise<void>;
   askReply: (silent?: boolean) => Promise<void>;
   editFact: (id: string, value: string) => void;
@@ -184,6 +188,7 @@ export const useApp = create<State>((set, get) => ({
   replyMode: null,
   replies: [],
   replyCards: [],
+  replyContext: [],
   version: 0,
 
   init: async () => {
@@ -239,13 +244,14 @@ export const useApp = create<State>((set, get) => ({
       replyMode: null,
       replies: [],
       replyCards: [],
+      replyContext: [],
       elapsedMs: null,
       requestId: null,
       notice: null,
     });
   },
 
-  translate: async (text, source, presetTranslation) => {
+  translate: async (text, source, presetTranslation, context = []) => {
     const next = get().version + 1;
     cancelInflight();
     set({
@@ -253,6 +259,7 @@ export const useApp = create<State>((set, get) => ({
       stage: 'translating',
       notice: null,
       original: text,
+      replyContext: context,
       translation: '',
       translateMode: null,
       translateNote: null,
@@ -318,6 +325,7 @@ export const useApp = create<State>((set, get) => ({
             translation: result.translation,
             facts: facts.map((fact) => ({ ...fact })),
             sourceLanguage: get().sourceLang,
+            context: get().replyContext,
           },
           (part) => transliterate(part, 'English'),
         ),
@@ -455,6 +463,44 @@ export const useApp = create<State>((set, get) => ({
     }
   },
 
+  /*
+   * 用整段译文直接生成回复，不把几句话再翻一遍（那样既慢又会把事实抽乱）。
+   * 原文是累积的全部句子，回复卡因此能按「所有内容」选场景，而不是只看最后一句。
+   */
+  usePassageForReply: (text, translation, context) => {
+    const next = get().version + 1;
+    cancelInflight();
+    set({
+      version: next,
+      stage: 'idle',
+      notice: { kind: 'info', text: '回复已按标签页整段内容生成（多句合并，未逐句核对）。' },
+      original: text,
+      translation,
+      translateMode: null,
+      translateNote: null,
+      translateCorrected: false,
+      translateMatched: null,
+      translateVia: null,
+      translateCorrections: [],
+      source: 'text',
+      elapsedMs: null,
+      requestId: null,
+      facts: [],
+      plan: null,
+      numericCheck: null,
+      replyText: '',
+      replyMode: null,
+      replies: [],
+      replyContext: context,
+      replyCards: planReplies(
+        { original: text, translation, facts: [], sourceLanguage: get().sourceLang, context },
+        (part) => transliterate(part, 'English'),
+      ),
+    });
+    // 服务端真配了模型时，仍让它有机会把这三张卡换成 AI 建议。
+    void get().askReply(true);
+  },
+
   editFact: (id, value) => {
     const facts = editRow(get().facts, id, value);
     set({ facts, plan: null });
@@ -520,6 +566,7 @@ export const useApp = create<State>((set, get) => ({
       replyMode: null,
       replies: [],
       replyCards: [],
+      replyContext: [],
       elapsedMs: null,
       requestId: null,
       notice: null,

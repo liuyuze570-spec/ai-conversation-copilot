@@ -19,7 +19,7 @@ import { SOURCE_LANGUAGES, modeLabel, type Health, type SourceLanguage } from '.
 import { toChineseSpeech, type NumericCheck } from '@shared/numeric-check';
 import type { TargetLanguage } from '@shared/types';
 import type { PlannedReply } from '@shared/reply-plan';
-import { REPLY_SOURCE_NOTE } from '@shared/reply-plan';
+import { REPLY_SOURCE_NOTE, REPLY_MODEL_HINT } from '@shared/reply-plan';
 import { ReplyCards } from './ReplyCards';
 import { FeedbackPanel, type FeedbackContext } from './FeedbackPanel';
 import { TabAudioPanel } from './TabAudioPanel';
@@ -881,7 +881,7 @@ export function App() {
         回复卡必须放在「重点信息」区块**外面**：hellow 这种问候没有可核对的
         事实，facts 为空，区块不渲染 —— 回复也就跟着消失了（线上实测过）。
 
-        卡片内容由本地的 `planReplies()` 按当前事实拼，翻译成功即生成，
+        卡片内容由本地的 `planReplies()` 按当前事实或内容场景拼，翻译成功即生成，
         不依赖模型与网络；服务端真有模型时才换成 AI 建议并另行标注。
       */}
       {state.replyCards.length ? (
@@ -911,6 +911,16 @@ export function App() {
             setTab('feedback');
           }}
         />
+      ) : null}
+      {state.replyCards.length ? (
+        <details className="mt-2 text-[11.5px] text-white/55" data-testid="reply-model-hint">
+          <summary className="cursor-pointer text-white/70">
+            这些回复是 AI 生成的吗？怎么开启真 AI？
+          </summary>
+          <p className="mt-1.5 rounded-xl border border-white/10 bg-white/4 px-3 py-2 leading-relaxed">
+            {REPLY_MODEL_HINT}
+          </p>
+        </details>
       ) : null}
 
       {/* P2：授权标签页音频捕获。放在主流程之后，不挤占「看懂→核对→回复」。 */}

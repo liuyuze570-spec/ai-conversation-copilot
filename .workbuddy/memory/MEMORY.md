@@ -85,7 +85,7 @@ status 三态 ok/approx/unknown；界面用文字「规则近似 N 段」+虚点
 3. **大字卡焦点**：打开时记 `event.currentTarget`，弹层卸载统一 restoreFocus；触发按钮被卸载退到 `h1[data-focus-fallback]`。别把触发 ref 写死在某颗按钮上。
 4. **反馈是真 SQLite 文件库**（`feedback_store.py`）：1000 字按 Unicode 码点前后端同源（config 下发）；编号+一次性凭证（只存 SHA-256）；状态只能由带 admin token 的 PATCH 推进，前端无入口 → 未配置时永远「已收到」。路由必须注册在 `/{path:path}` 之前。
 主题：三套色靠 `body[data-theme]` + CSS 变量覆盖 Tailwind 类（作用域 `#root`）；跟随系统要在切到 system 时**重新读并校准** `systemPrefersDark()` 快照，否则 change 值相同被 React 跳过。
-**版本纪律**：2026-11-09 15:41 已把公网从 web.7 一次性发布到 **`0.7.0-web.9`**（web.8 未单独上线）；发布前完整备份 `F:/copilot-deploy/backup-web8-20261109`（592MB，8899 从该目录继续跑 web.8）；`stable-web.9/.8/.7` 三个标签；发布必须显式 `startCmd="python run.py"`、版本号发布前必升、已有 live link 必须本轮明确授权。线上四套验收 19/34/32/52 全过（报告第 17 节）。**回退从未演练**；跨重新部署反馈持久性未验证（部署目录含 `server/data/feedback.sqlite3`，重发会随源码上传，有覆盖线上反馈的风险）。真人授权/四平台/识别准确率未达标；P3/P4、真实用户试用 0 人、讲述人实读、线上服务重启验证全部未完成，见 `docs/P2-P4-未完成清单与验收前置.md`。
+**版本纪律**：2026-11-09 15:41 公网从 web.7 一次发布到 **`0.7.0-web.9`**（web.8 未单独上线）；备份 `F:/copilot-deploy/backup-web8-20261109`（8899 从该目录跑 web.8）；`stable-web.9/.8/.7` 三标签；发布必须 `startCmd="python run.py"`、版本号发布前必升、已有 live link 必须本轮明确授权。线上 19/34/32/52 全过（报告 17 节）。**16:34 起本地 8903 跑 `0.7.0-web.10`（回复按内容生成 + 双轨），未发布、部署副本故意保持 web.9、未打 stable-web.10**；发布需用户明确说「发布 web.10」。**回退从未演练**；跨重新部署反馈持久性未验证（部署目录含 `server/data/feedback.sqlite3`，重发会随源码上传，有覆盖线上反馈的风险）。真人授权/四平台/识别准确率未达标；P3/P4、真实用户试用 0 人、讲述人实读、线上服务重启验证全部未完成，见 `docs/P2-P4-未完成清单与验收前置.md`。
 
 ### 0.7.0-web.9 P2 首版不变量（已发布到公网，仍有未验证项）
 1. **持续字幕按秒计费**：300 秒音频预算 + 单片 ≤10s + `ASR_GATE` 并发 1 + 90 次/分；`_wav_seconds()` 读 RIFF 头，探测失败按上限扣（不能白嫖）；`segment=1` 走新预算，手动整段录音仍用旧次数配额。whisper 同步调用必须 `run_in_threadpool`。
@@ -97,3 +97,9 @@ status 三态 ok/approx/unknown；界面用文字「规则近似 N 段」+虚点
 测试：单测 18 套 + 服务端 38 条 + `p2-verify.mjs` 52 项 + P0/P1 回归全过；
 **线上** 19 项 + P0 34 步 + P1 32 步 + P2 52 项全过；报告第 16/17 节与
 `docs/翻译其他网页视频-P2演示与兼容表.md`。
+
+### 0.7.0-web.10 不变量（本地 8903，未发布）
+1. **回复按内容变**：无事实句走 `detectScene()` 10 类 + `contentReplies()`（内容回应/内容追问/通用澄清）；有金额/否定/改期/时长事实**不进**新分支，P0 确认句不动。问候规则必须排在道别前（`good to see you` 含 `see you`）。短句借 `context` 上一句判场景。界面标「按当前内容生成（本地规则，不是模型）」。
+2. **真 AI 未接通**：`COPILOT_LLM_*` 空 → `health.real.reply=false`；`/api/reply` 的 `ProviderReply` 是现成开关，配置后 `askReply()` 自动换「AI 建议」。**不许把规则生成说成 AI 自动回复**。
+3. **双轨**：①逐句不变；②整段用 `chunkForTranslation()` 500 字/块、≤4 块逐块真实 ONNX 翻译再拼接，超出报 `omitted`。暂停/停止自动翻（`trigger=pause|stop`）、继续不重新授权且暂停期间 worklet 数据丢弃、新句子把译文标 `stale`（快照非实时）。`passageToken` 防旧结果回写。**整段是拼接，不是跨句改写/摘要**。
+4. **证据与边界**：`.dev/p3-content-unit.mjs` 96 条 + `webapp/e2e/p3-verify.mjs` 真 Chrome 55 项；报告第 18 节、`docs/evidence-web/p3-dual-track.png`。B 站只有一张用户现场截图（非助手实测），兼容表不标已支持；识别误差 `4:15→4.5` 照实保留。

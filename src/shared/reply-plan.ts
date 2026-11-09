@@ -16,6 +16,7 @@
  */
 
 import { planConfirmSentence, type ConfirmInput, type FactRole } from './facts';
+import { contextWindow } from './caption-pipeline';
 
 export type ReplyKind = 'confirm' | 'clarify' | 'polite';
 
@@ -57,6 +58,11 @@ export interface ReplyPlanInput {
   facts: ReplyFact[];
   /** 源语言，目前只有英语有模板；其他语言只给澄清句。 */
   sourceLanguage?: string;
+  /**
+   * 累积的前文（最近几句）。影视对白常出现 "Yeah." / "Right." 这类短句，
+   * 只看当前句会一直落回同一句通用回复 —— 借上一句判断场景才接得住。
+   */
+  context?: string[];
 }
 
 /** 币种代码 → 英语口语里的说法。 */
@@ -235,6 +241,165 @@ function hasApology(text: string): boolean {
 }
 
 /**
+ * 无事实句子的场景分类。
+ *
+ * 影视对白、寒暄、叙述里没有金额/日期/时间可以核对，旧版只能给三条
+ * 写死的兜底句（「请说慢一点」「我记下了」「请打字」），于是每一句台词
+ * 看起来都一模一样。这里按句式和内容分场景，让回复真的跟着内容变。
+ *
+ * 仍然是**规则**，不是模型；界面不许写「AI 生成」。
+ */
+export type ContentScene =
+  | 'greeting' | 'thanks' | 'apology' | 'question' | 'farewell'
+  | 'invitation' | 'superlative' | 'opinion' | 'story' | 'statement';
+
+const SCENE_PATTERNS: Array<[ContentScene, RegExp]> = [
+  ['thanks', /\b(?:thank you|thanks|thank u|appreciate it|much appreciated)\b|谢谢|感谢/i],
+  ['apology', /\b(?:sorry|apologi[sz]e|apologies|my bad|forgive me)\b|抱歉|对不起/i],
+  // 问候要排在道别前面： "Hi there, good to see you." 里的 "see you"
+  // 会被 farewell 的 see you 误抓，实测过。
+  ['greeting', /^(?:hi|hello|hey|good morning|good afternoon|good evening|how are you|how's it going)\b|你好|早上好/i],
+  ['farewell', /\b(?:goodbye|bye\b|see you|take care|good night|talk later)\b|再见/i],
+  ['invitation', /\b(?:let's|let us|would you like|how about|shall we|do you want|want to|can you join|come with)\b/i],
+  ['question', /\?\s*$|？\s*$|^(?:what|why|how|when|where|who|which|can|could|would|will|do|does|did|is|are|am|may|should|have|has)\b/i],
+  ['superlative', /\b(?:biggest|best|worst|greatest|largest|longest|shortest|fastest|hardest|easiest|most|least|first time|ever done|ever seen|ever had|incredible|amazing|unbelievable|definitely|absolutely)\b/i],
+  ['opinion', /\b(?:i think|i feel|i believe|i guess|i suppose|in my opinion|seems|probably|maybe|personally|to be honest)\b/i],
+  ['story', /\b(?:was|were|had|did|went|said|told|happened|started|then|yesterday|last night|ago)\b/i],
+];
+
+/** 取真正的前一句；调用方即使把当前句也塞进上下文，也不会拿自己当背景。 */
+function priorLine(context: string[], current: string): string {
+  for (let index = context.length - 1; index >= 0; index -= 1) {
+    const item = (context[index] ?? '').trim();
+    if (item && item !== current) return item;
+  }
+  return '';
+}
+
+export function detectScene(text: string, context: string[] = []): ContentScene {
+  const current = (text ?? '').trim();
+  const letters = current.replace(/[^\p{L}\p{N}]/gu, '');
+  // 短句（"Yeah." / "Right." / "Wow."）借上一句判场景，否则连续对白
+  // 会一次次落回 statement，回复又变回固定的了。
+  const sample = letters.length >= 6 ? current : `${priorLine(context, current)} ${current}`.trim();
+  for (const [scene, pattern] of SCENE_PATTERNS) {
+    if (pattern.test(sample)) return scene;
+  }
+  return 'statement';
+}
+
+interface ContentLine {
+  purpose: string;
+  en: string;
+  zh: string;
+  why: string;
+}
+
+interface SceneLines {
+  primary: ContentLine;
+  follow: ContentLine;
+  /** 第三张始终是「请求重复/放慢/打字」，只是按场景换一种更自然的说法。 */
+  clarify: 'slower' | 'type';
+}
+
+const SCENE_LINES: Record<ContentScene, SceneLines> = {
+  greeting: {
+    primary: { purpose: '回应问候', en: 'Hi, good to see you.', zh: '嗨，见到你真好。', why: '对方在打招呼，先把话接住' },
+    follow: { purpose: '把对话接下去', en: "How's your day going?", zh: '今天过得怎么样？', why: '一个不需要承诺任何事的开放问题' },
+    clarify: 'slower',
+  },
+  thanks: {
+    primary: { purpose: '回应道谢', en: "You're welcome.", zh: '不客气。', why: '对方在道谢，一句就够' },
+    follow: { purpose: '简短收尾', en: 'No problem at all.', zh: '没事，不客气。', why: '短、自然，不涉及任何承诺' },
+    clarify: 'type',
+  },
+  apology: {
+    primary: { purpose: '回应道歉', en: "That's all right, no worries.", zh: '没关系，别在意。', why: '对方说了抱歉，这句最自然' },
+    follow: { purpose: '让对方放心', en: "It happens — don't worry about it.", zh: '常有的事，别放在心上。', why: '不追究、不指责，也不替你原谅具体的事' },
+    clarify: 'slower',
+  },
+  farewell: {
+    primary: { purpose: '回应道别', en: 'See you, take care.', zh: '回头见，保重。', why: '对方在收尾，跟着收尾' },
+    follow: { purpose: '简短道别', en: 'Talk soon.', zh: '回头聊。', why: '不约定具体时间，不替你答应下次见面' },
+    clarify: 'type',
+  },
+  invitation: {
+    primary: { purpose: '回应邀请（不替你答应）', en: 'Thanks for asking — let me check and get back to you.', zh: '谢谢你想到我，我确认一下再回复你。', why: '只承诺「回复」，不承诺出席或参加' },
+    follow: { purpose: '先要细节', en: 'Could you send me the details in writing?', zh: '能把细节用文字发我吗？', why: '拿到细节再决定，不用当场表态' },
+    clarify: 'type',
+  },
+  question: {
+    primary: { purpose: '回答提问（不硬答）', en: 'Good question — let me check and get back to you.', zh: '问得好，我确认一下再回复你。', why: '不知道就不编答案，只承诺回复' },
+    follow: { purpose: '争取一点时间', en: 'Could you give me a moment to look that up?', zh: '能给我一点时间查一下吗？', why: '请对方等一下，不制造新信息' },
+    clarify: 'type',
+  },
+  superlative: {
+    primary: { purpose: '回应对方的强调', en: "That sounds impressive — the biggest one you've done?", zh: '听起来很了不起——是你做过最大的一次吗？', why: '原话用了最高级，顺着确认一次；用问句，不替你下结论' },
+    follow: { purpose: '请对方接着讲', en: 'What was it like working on it?', zh: '做的时候是什么感觉？', why: '对方在讲经历，接一个开放问题就能继续聊' },
+    clarify: 'slower',
+  },
+  opinion: {
+    primary: { purpose: '回应对方的观点', en: "That's interesting — could you tell me a bit more?", zh: '挺有意思，能再多说一点吗？', why: '顺着话题，不替你站队' },
+    follow: { purpose: '请对方展开', en: 'What makes you say that?', zh: '你为什么会这么想？', why: '请对方解释，不替你附和' },
+    clarify: 'slower',
+  },
+  story: {
+    primary: { purpose: '接着听对方讲', en: 'Right, and what happened next?', zh: '嗯，后来呢？', why: '对方在讲经过，接一句就能继续听下去' },
+    follow: { purpose: '请对方重说后半句', en: 'Could you say that last part again a little slower?', zh: '最后那部分能再慢一点说一遍吗？', why: '叙事最容易漏掉的正是后半句' },
+    clarify: 'type',
+  },
+  statement: {
+    primary: { purpose: '表示收到', en: 'I see — thanks for letting me know.', zh: '明白了，谢谢你告诉我。', why: '对方在陈述，先表示听懂了' },
+    follow: { purpose: '请对方补充', en: 'Could you say a bit more about that?', zh: '能就这个再说说吗？', why: '不替你猜意思，请对方多说一点' },
+    clarify: 'slower',
+  },
+};
+
+const CLARIFY_LINES: Record<'slower' | 'type', ContentLine> = {
+  slower: {
+    purpose: '请对方说慢一点或再说一遍',
+    en: 'Sorry, could you say that again a little slower?',
+    zh: '不好意思，能再慢一点说一遍吗？',
+    why: '通用且不冒犯；没有说「我听不见」',
+  },
+  type: {
+    purpose: '请对方打字（语音不是唯一通道）',
+    en: 'Sorry, could you type that instead? It is easier for me.',
+    zh: '不好意思，能打字给我吗？这样更方便。',
+    why: '不说「我听不见」，只说「打字更方便」',
+  },
+};
+
+/**
+ * 按内容生成三张卡：内容回应 → 内容追问 → 通用澄清。
+ * 前两张随场景变，第三张保住「请求重复/放慢/澄清」这条底线。
+ */
+export function contentReplies(
+  scene: ContentScene,
+  context: string[] = [],
+): Array<Omit<PlannedReply, 'segments'>> {
+  const lines = SCENE_LINES[scene];
+  const suffix = context.length ? `（已结合前面 ${context.length} 句）` : '';
+  const clarify = CLARIFY_LINES[lines.clarify];
+  return [
+    {
+      id: `content-${scene}-primary`, kind: 'polite',
+      purpose: lines.primary.purpose, en: lines.primary.en, zh: lines.primary.zh,
+      why: lines.primary.why + suffix,
+    },
+    {
+      id: `content-${scene}-follow`, kind: 'clarify',
+      purpose: lines.follow.purpose, en: lines.follow.en, zh: lines.follow.zh,
+      why: lines.follow.why + suffix,
+    },
+    {
+      id: `content-${scene}-clarify`, kind: 'clarify',
+      purpose: clarify.purpose, en: clarify.en, zh: clarify.zh, why: clarify.why,
+    },
+  ];
+}
+
+/**
  * 生成最多三条回复。
  *
  * 顺序固定为「确认 → 澄清 → 礼貌」，因为真实的沟通顺序就是这样：
@@ -324,6 +489,25 @@ export function planReplies(input: ReplyPlanInput, phon: (text: string) => strin
         ),
       );
     }
+  }
+
+  /*
+   * 无事实可核对时（影视对白、寒暄、叙述），旧版三条全是写死的兜底句，
+   * 于是每一句台词看起来都一样 —— 线上截图确实如此。这里按当前句 +
+   * 前文场景重新生成三张，前两张随内容变，第三张保住「请求重复/放慢/澄清」。
+   *
+   * 金额 / 币种 / 否定 / 改期 / 时长只要有事实，就完全不进这个分支，
+   * P0 那些回归句子看到的仍是原来的确认句。
+   */
+  const factual = money.length > 0 || Boolean(origin && current) ||
+    facts.length > 0 || Boolean(negated);
+  if (english && !factual) {
+    const context = contextWindow(input.context ?? []);
+    const scene = detectScene(input.original, context);
+    for (const item of contentReplies(scene, context)) {
+      out.push(makeReply(item, phon));
+    }
+    return out.slice(0, 3);
   }
 
   // ---- 2. 澄清 ---------------------------------------------------------- //
@@ -477,7 +661,16 @@ export function planReplies(input: ReplyPlanInput, phon: (text: string) => strin
 
 /** 卡片上「这一条从哪来」的诚实标注。 */
 export const REPLY_SOURCE_NOTE = {
-  rule: '规则生成（按原话里的事实拼的，不是模型写的）',
+  rule: '按当前内容生成（本地规则，不是模型）',
   model: 'AI 建议（模型生成，请自己判断要不要说）',
   preset: '预置演示句',
 } as const;
+
+/**
+ * 真 AI 的开关说明。服务端 `/api/reply` 本来就有 ProviderReply（云端模型），
+ * 只是没配凭据时会退化成模板句；配置后 `askReply()` 自动把三张卡换成 AI 建议。
+ * 这句话要让用户看得见「现在不是 AI」以及「怎么让它变成 AI」，不许含糊。
+ */
+export const REPLY_MODEL_HINT =
+  'AI 模型回复当前未配置。服务端设置 COPILOT_LLM_BASE_URL / COPILOT_LLM_API_KEY / COPILOT_LLM_MODEL 后，' +
+  '翻译完成会自动改用模型生成的回复，并标注「AI 建议」。现在这三张是按内容生成的本地规则，不是 AI。';

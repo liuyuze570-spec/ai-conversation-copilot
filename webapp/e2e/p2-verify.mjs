@@ -75,7 +75,8 @@ try {
     const response = await fetch('/api/health');
     return response.json();
   });
-  expect('V1 web.9 版本', health.version === '0.7.0-web.9', health.version);
+  const webMinor = Number((health.version.match(/web\.(\d+)/) || [])[1] || 0);
+  expect('V1 web.9 及以后的版本', webMinor >= 9, health.version);
   expect('V2 音频时长预算已生效', health.limits.audio_budget_seconds === 300, health.limits);
   expect('V3 单片上限与并发', health.limits.segment_max_seconds === 10 && health.limits.asr_concurrency === 1, health.limits);
   expect('V4 频率限制改为 90/分', health.limits.rate_per_min === 90, health.limits.rate_per_min);

@@ -16,6 +16,7 @@
  */
 
 import {
+  chunkForTranslation,
   dedupeSegment,
   downsample,
   isSilent,
@@ -34,6 +35,7 @@ export type CaptureState =
   | 'requesting'
   | 'capturing'
   | 'waiting-sound'
+  | 'paused'
   | 'stopping'
   | 'stopped'
   | 'error';
@@ -64,11 +66,50 @@ export interface CaptureStats {
   totalMs: number[];
 }
 
+/**
+ * 第二条轨道：整段连贯翻译。
+ *
+ * 逐句轨一条一条出、保持不变；这一轨把**到目前为止全部**句子合起来翻一次，
+ * 由「暂停」或「停止」自动触发。继续采集后新句子会让它变 stale，
+ * 界面必须明说「有 N 句还没纳入」，不能拿旧译文冒充实时。
+ */
+export interface PassageTranslation {
+  status: 'idle' | 'translating' | 'done' | 'error';
+  /** 已经翻进译文的原文（分块拼接后的范围）。 */
+  text: string;
+  translation: string;
+  /** 覆盖到第几句 / 目前共几句。 */
+  covered: number;
+  total: number;
+  /** 分了几块、各块走的翻译模式。 */
+  chunks: number;
+  modes: string[];
+  /** 块数上限之外没能纳入的句子数。 */
+  omitted: number;
+  /** 继续采集后又有新句子，译文已过期。 */
+  stale: boolean;
+  /** 这次是谁触发的：pause / stop / manual。界面要能说明「停止会自动翻译」。 */
+  trigger: string;
+  ms: number;
+  error: string;
+}
+
+export function emptyPassage(): PassageTranslation {
+  return {
+    status: 'idle', text: '', translation: '', covered: 0, total: 0,
+    chunks: 0, modes: [], omitted: 0, stale: false, trigger: '',
+    ms: 0, error: '',
+  };
+}
+
 export interface CaptureCallbacks {
   onState: (state: CaptureState, detail: string) => void;
   onLine: (line: CaptureLine) => void;
   onStats: (stats: CaptureStats) => void;
   onError: (code: string, message: string) => void;
+  /** 累积的全部成句原文（暂停/继续都不清空，直到下一次新会话）。 */
+  onTranscript?: (sentences: string[]) => void;
+  onPassage?: (passage: PassageTranslation) => void;
 }
 
 export interface CaptureOptions extends CaptureCallbacks {
@@ -185,6 +226,11 @@ export class TabAudioSession {
     budgetLeft: null, asrMs: [], translateMs: [], totalMs: [],
   };
   private endedHandler: (() => void) | null = null;
+  private transcript: string[] = [];
+  private passage: PassageTranslation = emptyPassage();
+  private paused = false;
+  private passageToken = 0;
+  private disposed = false;
 
   constructor(options: CaptureOptions) {
     this.opts = {
@@ -195,6 +241,8 @@ export class TabAudioSession {
       onLine: options.onLine,
       onStats: options.onStats,
       onError: options.onError,
+      onTranscript: options.onTranscript,
+      onPassage: options.onPassage,
     };
   }
 
@@ -242,8 +290,15 @@ export class TabAudioSession {
   private async attach(stream: MediaStream, label: string): Promise<void> {
     const generation = ++this.generation;
     this.resetRuntime();
+    // 新一轮授权 = 新一轮全文。暂停/继续不清空，停止后也保留供查看。
+    this.transcript = [];
+    this.passage = emptyPassage();
+    this.paused = false;
+    this.passageToken += 1;
     this.stream = stream;
     this.sourceLabel = label;
+    this.opts.onTranscript?.([]);
+    this.emitPassage();
 
     const audioTracks = stream.getAudioTracks();
     if (audioTracks.length === 0 || audioTracks.every((track) => track.readyState !== 'live')) {
@@ -295,6 +350,13 @@ export class TabAudioSession {
       let frames = 0;
       node.port.onmessage = (event: MessageEvent) => {
         if (generation !== this.generation) return;
+        if (this.paused) {
+          // 暂停时音频轨仍 live、worklet 仍在推数据。直接丢掉，
+          // 否则「继续」会把暂停那段一起识别出来，等于没停。
+          chunks = [];
+          frames = 0;
+          return;
+        }
         const chunk = new Float32Array(event.data as ArrayLike<number>);
         chunks.push(chunk);
         frames += chunk.length;
@@ -461,6 +523,17 @@ export class TabAudioSession {
     this.stats.lines += 1;
     this.recent.push(sentence);
     if (this.recent.length > 6) this.recent = this.recent.slice(-6);
+    this.transcript.push(sentence);
+    this.opts.onTranscript?.([...this.transcript]);
+    // 继续采集后新句子进来了：整段译文立刻标「已过期」，不冒充实时。
+    if (this.passage.status !== 'idle') {
+      this.passage = {
+        ...this.passage,
+        total: this.transcript.length,
+        stale: this.passage.status === 'done' && this.transcript.length > this.passage.covered,
+      };
+      this.emitPassage();
+    }
     const line: CaptureLine = {
       seq,
       text: sentence,
@@ -511,6 +584,7 @@ export class TabAudioSession {
     this.queue = [];
     this.slices.clear();
     this.pumping = false;
+    this.paused = false;
     this.nextSeq = 0;
     this.carry = '';
     this.recent = [];
@@ -535,8 +609,140 @@ export class TabAudioSession {
     this.stopTracks();
   }
 
-  /** 停止：abort 在途、清空排队、释放全部轨道。不 flush 未成句的尾巴。 */
-  async stop(): Promise<void> {
+  private emitPassage(): void {
+    if (!this.disposed) this.opts.onPassage?.({ ...this.passage });
+  }
+
+  /** 手动刷新整段译文（继续采集后译文过期时可用）。 */
+  async refreshPassage(): Promise<void> {
+    await this.translatePassage('manual');
+  }
+
+  /**
+   * 暂停：停止切片与排队，但**保留音频轨**，所以「继续」不用再选一次标签页。
+   * 同时把到目前为止的全部句子整段翻一次 —— 用户说「停止，自动翻译」。
+   */
+  async pause(): Promise<void> {
+    if (!this.stream || this.paused) return;
+    this.paused = true;
+    // 没等到句号的半句也要算进全文，否则暂停会丢掉最后一段话。
+    const pending = this.carry.trim();
+    if (pending) {
+      this.carry = '';
+      this.transcript.push(pending);
+      this.opts.onTranscript?.([...this.transcript]);
+    }
+    for (const controller of this.controllers) controller.abort();
+    this.controllers.clear();
+    this.queue = [];
+    this.slices.clear();
+    this.pumping = false;
+    this.silentStreak = 0;
+    this.opts.onState('paused', '已暂停，正在把到目前为止的全部内容整段翻译');
+    this.emitStats();
+    await this.translatePassage('pause');
+  }
+
+  /** 继续：恢复切片，全文接着累积；下次暂停/停止会刷新整段译文。 */
+  resume(): void {
+    if (!this.stream || !this.paused) return;
+    this.paused = false;
+    this.opts.onState('capturing', '继续采集，整段译文会在下次暂停或停止时更新');
+    this.emitStats();
+  }
+
+  /**
+   * 第二条轨道：把累积全文按句子分块，逐块走真实翻译模型，再拼成整段译文。
+   * 不做「每句一翻」—— 那正是用户觉得慢的地方；也不凭空生成译文。
+   */
+  private async translatePassage(reason: 'pause' | 'stop' | 'manual'): Promise<void> {
+    const token = ++this.passageToken;
+    const sentences = [...this.transcript];
+    if (!sentences.length) {
+      this.passage = {
+        ...emptyPassage(), status: 'done', trigger: reason,
+        error: '还没有识别到成句的字幕，没有内容可整段翻译。',
+      };
+      this.emitPassage();
+      return;
+    }
+
+    const { chunks, omitted, oversized } = chunkForTranslation(sentences, 500, 4);
+    const covered = chunks.reduce((sum, item) => sum + (item.to - item.from), 0);
+    const started = performance.now();
+    this.passage = {
+      status: 'translating',
+      text: sentences.slice(sentences.length - covered).join(' '),
+      translation: '', covered: 0, total: sentences.length,
+      chunks: chunks.length, modes: [], omitted, stale: false,
+      trigger: reason, ms: 0, error: '',
+    };
+    this.emitPassage();
+
+    const controller = new AbortController();
+    this.controllers.add(controller);
+    const parts: string[] = [];
+    const modes: string[] = [];
+    const failures: number[] = [];
+    try {
+      for (let index = 0; index < chunks.length; index += 1) {
+        if (token !== this.passageToken || controller.signal.aborted) return;
+        try {
+          const result = await withSession(
+            () => apiTranslate(chunks[index].text, controller.signal, this.opts.language),
+            controller.signal,
+          );
+          if (token !== this.passageToken) return;
+          parts.push(result.translation);
+          modes.push(result.mode);
+          this.passage = {
+            ...this.passage,
+            translation: parts.join('\n'),
+            covered: chunks.slice(0, index + 1).reduce((sum, item) => sum + (item.to - item.from), 0),
+            modes: [...modes],
+            total: this.transcript.length,
+            ms: Math.round(performance.now() - started),
+          };
+          this.emitPassage();
+        } catch (error) {
+          if (controller.signal.aborted || token !== this.passageToken) return;
+          failures.push(index + 1);
+          // 失败那块留一个显式占位，绝不拿英文原文或现成中文顶上。
+          parts.push(`（第 ${index + 1} 段翻译失败，未生成译文）`);
+        }
+      }
+      if (token !== this.passageToken) return;
+      const anySuccess = parts.some((_part, index) => !failures.includes(index + 1));
+      this.passage = {
+        ...this.passage,
+        status: anySuccess ? 'done' : 'error',
+        translation: parts.join('\n'),
+        modes: [...modes],
+        total: this.transcript.length,
+        stale: this.transcript.length > covered,
+        ms: Math.round(performance.now() - started),
+        error: [
+          omitted ? `超过分块上限，最早 ${omitted} 句未纳入整段翻译` : '',
+          oversized ? `${oversized} 句本身超长，单独成块（可能被服务端拒绝）` : '',
+          failures.length ? `第 ${failures.join('、')} 段翻译失败` : '',
+        ].filter(Boolean).join('；'),
+      };
+      this.emitPassage();
+    } finally {
+      this.controllers.delete(controller);
+    }
+  }
+
+  /** 组件卸载：丢掉在途结果，不再往已卸载的组件里 setState。 */
+  dispose(): void {
+    this.disposed = true;
+    this.passageToken += 1;
+    for (const controller of this.controllers) controller.abort();
+    this.controllers.clear();
+  }
+
+  /** 停止：abort 在途、清空排队、释放全部轨道，并自动做一次整段翻译。 */
+  async stop(options?: { translate?: boolean }): Promise<void> {
     this.generation += 1;
     // 停止后仍要能看到这一轮的切片数、延迟和预算余量，不能清成 0。
     const finalStats = { ...this.stats };
@@ -546,5 +752,9 @@ export class TabAudioSession {
     this.sourceLabel = '';
     this.opts.onState('stopped', '已停止，所有采集轨道已释放');
     this.emitStats();
+    // 用户停止 → 自动按全部内容整段翻译。不 await：停止本身必须即时。
+    if (options?.translate !== false && !this.disposed) {
+      void this.translatePassage('stop');
+    }
   }
 }

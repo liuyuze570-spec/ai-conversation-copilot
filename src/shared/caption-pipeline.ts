@@ -189,3 +189,85 @@ export function percentile(values: number[], p: number): number {
   if (low === high) return sorted[low];
   return sorted[low] + (sorted[high] - sorted[low]) * (index - low);
 }
+
+export interface TranslationChunk {
+  /** 拼起来送去翻译的原文。 */
+  text: string;
+  /** 覆盖的句子区间 [from, to)，用来算「整段译文覆盖到第几句」。 */
+  from: number;
+  to: number;
+}
+
+export interface ChunkPlan {
+  chunks: TranslationChunk[];
+  /** 因为达到块数上限而没纳入的句子数。必须显示出来，不能静默丢内容。 */
+  omitted: number;
+  /** 单句就超过上限时单独成块；服务端若拒绝会如实报错，不在这里偷偷截断。 */
+  oversized: number;
+}
+
+/**
+ * 整段翻译的分块：按**句子**边界组合，不把一句从中间切开。
+ *
+ * 服务端 `/api/translate` 有 2000 字上限，而 ONNX 翻译对超长输入会退化，
+ * 所以每块默认 500 字、最多 4 块。超过块数上限时保留**最近**的句子
+ * （影视场景里刚说的比开头更要看懂），并把被略过的句数返回给界面明说。
+ */
+export function chunkForTranslation(
+  sentences: string[],
+  maxChars = 500,
+  maxChunks = 4,
+): ChunkPlan {
+  const clean = (sentences ?? []).map((item) => (item ?? '').trim()).filter(Boolean);
+  if (!clean.length) return { chunks: [], omitted: 0, oversized: 0 };
+
+  const built: TranslationChunk[] = [];
+  let oversized = 0;
+  let current = '';
+  let from = 0;
+
+  const flush = (to: number) => {
+    if (current) built.push({ text: current, from, to });
+    current = '';
+    from = to;
+  };
+
+  for (let index = 0; index < clean.length; index += 1) {
+    const sentence = clean[index];
+    const next = current ? `${current} ${sentence}` : sentence;
+    if (current && next.length > maxChars) {
+      flush(index);
+      current = sentence;
+      from = index;
+    } else {
+      current = next;
+    }
+    if (current.length > maxChars) {
+      // 单句本身就超长：单独一块，交给服务端按真实上限判定，不擅自改写原文。
+      oversized += 1;
+      flush(index + 1);
+    }
+  }
+  flush(clean.length);
+
+  if (built.length <= maxChunks) return { chunks: built, omitted: 0, oversized };
+  const kept = built.slice(built.length - maxChunks);
+  const omitted = built
+    .slice(0, built.length - maxChunks)
+    .reduce((sum, chunk) => sum + (chunk.to - chunk.from), 0);
+  return { chunks: kept, omitted, oversized };
+}
+
+/** 回复用的上下文：只要最近几句，且总长不失控。 */
+export function contextWindow(sentences: string[], maxSentences = 6, maxChars = 600): string[] {
+  const clean = (sentences ?? []).map((item) => (item ?? '').trim()).filter(Boolean);
+  const out: string[] = [];
+  let chars = 0;
+  for (let index = clean.length - 1; index >= 0 && out.length < maxSentences; index -= 1) {
+    const item = clean[index];
+    if (chars + item.length > maxChars && out.length) break;
+    out.unshift(item);
+    chars += item.length;
+  }
+  return out;
+}

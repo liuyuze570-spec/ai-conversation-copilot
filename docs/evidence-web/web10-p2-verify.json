@@ -1,0 +1,325 @@
+{
+  "base": "http://127.0.0.1:8903",
+  "at": "2026-11-09T08:33:15.455Z",
+  "steps": [
+    {
+      "name": "V1 web.9 及以后的版本",
+      "data": "PASS"
+    },
+    {
+      "name": "V2 音频时长预算已生效",
+      "data": "PASS"
+    },
+    {
+      "name": "V3 单片上限与并发",
+      "data": "PASS"
+    },
+    {
+      "name": "V4 频率限制改为 90/分",
+      "data": "PASS"
+    },
+    {
+      "name": "V5 真实识别后端",
+      "data": "PASS"
+    },
+    {
+      "name": "U1 开始按钮可用 / 停止按钮初始禁用",
+      "data": "PASS"
+    },
+    {
+      "name": "U2 明确不用麦克风冒充",
+      "data": "PASS"
+    },
+    {
+      "name": "U3 明确不上传画面",
+      "data": "PASS"
+    },
+    {
+      "name": "U4 并排显示不冒充悬浮字幕",
+      "data": "PASS"
+    },
+    {
+      "name": "U5 说明不对每片段生成回复",
+      "data": "PASS"
+    },
+    {
+      "name": "U6 平台兼容标未测试",
+      "data": "PASS"
+    },
+    {
+      "name": "U7 状态有 role=status",
+      "data": "PASS"
+    },
+    {
+      "name": "U8 初始无字幕",
+      "data": "PASS"
+    },
+    {
+      "name": "U9 浏览器具备正式标签页捕获能力",
+      "data": "PASS"
+    },
+    {
+      "name": "INJECT",
+      "data": {
+        "audioTracks": 1,
+        "videoTracks": 0,
+        "seconds": 13.86,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "I1 注入的是真实音频轨",
+      "data": "PASS"
+    },
+    {
+      "name": "I2 自检来源如实标注",
+      "data": "PASS"
+    },
+    {
+      "name": "I3 状态进入采集/等待声音",
+      "data": "PASS"
+    },
+    {
+      "name": "LINES",
+      "data": [
+        {
+          "seq": 1,
+          "text": "Please send the report by 3 p.m. tomorrow.",
+          "translation": "请在明天下午3时前将报告发送。",
+          "totalMs": 859
+        },
+        {
+          "seq": 3,
+          "text": "I will bring the blue folder to the office at 4.50 p.m. 13 p.m. on Friday.",
+          "translation": "我将于星期五下午4时50分13时将蓝文件夹带回办公室。",
+          "totalMs": 1281
+        },
+        {
+          "seq": 4,
+          "text": "The meeting is not- Not on Tuesday.",
+          "translation": "周二不开会,",
+          "totalMs": 693
+        }
+      ]
+    },
+    {
+      "name": "L1 至少一条真实字幕",
+      "data": "PASS"
+    },
+    {
+      "name": "L2 字幕原文非空",
+      "data": "PASS"
+    },
+    {
+      "name": "L3 译文非空（真实翻译返回）",
+      "data": "PASS"
+    },
+    {
+      "name": "L4 原文命中测试音频里的真实词",
+      "data": "PASS"
+    },
+    {
+      "name": "L5 识别模式是 local-whisper",
+      "data": "PASS"
+    },
+    {
+      "name": "L6 端到端延迟有实测值",
+      "data": "PASS"
+    },
+    {
+      "name": "L7 编号不重复且非乱序",
+      "data": "PASS"
+    },
+    {
+      "name": "STATS",
+      "data": {
+        "slices": 4,
+        "sent": 4,
+        "silent": 0,
+        "dropped": 0,
+        "lines": 3,
+        "budgetLeft": 288,
+        "totalMs": [
+          859,
+          1281,
+          693
+        ]
+      }
+    },
+    {
+      "name": "S1 产生了真实切片",
+      "data": "PASS"
+    },
+    {
+      "name": "S2 有片段真正上传识别",
+      "data": "PASS"
+    },
+    {
+      "name": "S3 音频预算确实按秒扣减",
+      "data": "PASS"
+    },
+    {
+      "name": "S4 有声音的切片都送了识别",
+      "data": "PASS"
+    },
+    {
+      "name": "S5 没有调用 /api/reply（不对每片段生成回复）",
+      "data": "PASS"
+    },
+    {
+      "name": "S6 识别请求只发 /api/transcribe",
+      "data": "PASS"
+    },
+    {
+      "name": "S7 无画面上传（页面无 video 元素）",
+      "data": "PASS"
+    },
+    {
+      "name": "SHOT",
+      "data": "docs/evidence-web/p2-tab-audio.png"
+    },
+    {
+      "name": "T1 状态为已停止",
+      "data": "PASS"
+    },
+    {
+      "name": "T2 所有采集轨道已释放",
+      "data": "PASS"
+    },
+    {
+      "name": "T3 停止后不再新增字幕",
+      "data": "PASS"
+    },
+    {
+      "name": "T4 停止后统计不再增长",
+      "data": "PASS"
+    },
+    {
+      "name": "T5 按钮回到可重新开始状态",
+      "data": "PASS"
+    },
+    {
+      "name": "QUIET",
+      "data": {
+        "slices": 3,
+        "silent": 3,
+        "sent": 0,
+        "lines": 3,
+        "state": "waiting-sound"
+      }
+    },
+    {
+      "name": "Q1 静音片全部判为静音",
+      "data": "PASS"
+    },
+    {
+      "name": "Q2 静音期间没有上传任何识别请求",
+      "data": "PASS"
+    },
+    {
+      "name": "Q3 静音期间不生成字幕",
+      "data": "PASS"
+    },
+    {
+      "name": "Q4 界面显示等待声音",
+      "data": "PASS"
+    },
+    {
+      "name": "Q5 等待状态明确说明不会生成字幕",
+      "data": "PASS"
+    },
+    {
+      "name": "E1 无音轨给明确错误",
+      "data": "PASS"
+    },
+    {
+      "name": "E2 无音轨时没有产生字幕",
+      "data": "PASS"
+    },
+    {
+      "name": "E3 错误有 role=alert",
+      "data": "PASS"
+    },
+    {
+      "name": "C1 选中句子进入主流程",
+      "data": "PASS"
+    },
+    {
+      "name": "C2 回复卡仍可用",
+      "data": "PASS"
+    },
+    {
+      "name": "X1 无意外控制台错误",
+      "data": "PASS"
+    }
+  ],
+  "failures": [],
+  "audio": {
+    "files": [
+      "s1-report.wav",
+      "s4-new.wav",
+      "s2-meeting.wav"
+    ],
+    "source": "Windows SAPI5 合成语音（非真人录音、非视频原声）"
+  },
+  "lines": [
+    {
+      "seq": 1,
+      "text": "Please send the report by 3 p.m. tomorrow.",
+      "translation": "请在明天下午3时前将报告发送。",
+      "partial": false,
+      "asrMode": "local-whisper",
+      "translateMode": "local-onnx",
+      "asrMs": 430,
+      "translateMs": 428,
+      "totalMs": 859
+    },
+    {
+      "seq": 3,
+      "text": "I will bring the blue folder to the office at 4.50 p.m. 13 p.m. on Friday.",
+      "translation": "我将于星期五下午4时50分13时将蓝文件夹带回办公室。",
+      "partial": false,
+      "asrMode": "local-whisper",
+      "translateMode": "local-onnx",
+      "asrMs": 420,
+      "translateMs": 861,
+      "totalMs": 1281
+    },
+    {
+      "seq": 4,
+      "text": "The meeting is not- Not on Tuesday.",
+      "translation": "周二不开会,",
+      "partial": false,
+      "asrMode": "local-whisper",
+      "translateMode": "local-onnx",
+      "asrMs": 423,
+      "translateMs": 270,
+      "totalMs": 693
+    }
+  ],
+  "stats": {
+    "slices": 4,
+    "sent": 4,
+    "silent": 0,
+    "dropped": 0,
+    "lines": 3,
+    "budgetLeft": 288,
+    "asrMs": [
+      430,
+      460,
+      420,
+      423
+    ],
+    "translateMs": [
+      428,
+      861,
+      270
+    ],
+    "totalMs": [
+      859,
+      1281,
+      693
+    ]
+  },
+  "consoleErrors": []
+}

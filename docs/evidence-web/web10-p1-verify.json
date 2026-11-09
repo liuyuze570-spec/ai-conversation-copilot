@@ -1,0 +1,339 @@
+{
+  "base": "http://127.0.0.1:8903",
+  "steps": [
+    {
+      "name": "N1 主导航四项齐全",
+      "data": "PASS"
+    },
+    {
+      "name": "N2 默认停在字幕页",
+      "data": "PASS"
+    },
+    {
+      "name": "N3 学习页默认隐藏且明确标未完成",
+      "data": "PASS"
+    },
+    {
+      "name": "T-light 主题生效并保存",
+      "data": "PASS"
+    },
+    {
+      "name": "T-light 普通文字对比度全部 ≥4.5:1",
+      "data": "PASS"
+    },
+    {
+      "name": "T-light-contrast",
+      "data": [
+        {
+          "label": "主标题",
+          "ratio": 14.66,
+          "fg": [
+            27,
+            36,
+            52,
+            1
+          ],
+          "bg": [
+            247,
+            248,
+            251,
+            1
+          ]
+        },
+        {
+          "label": "状态行",
+          "ratio": 6.89,
+          "fg": [
+            76,
+            87,
+            104,
+            1
+          ],
+          "bg": [
+            247,
+            248,
+            251,
+            1
+          ]
+        },
+        {
+          "label": "原文",
+          "ratio": 14.66,
+          "fg": [
+            27,
+            36,
+            52,
+            1
+          ],
+          "bg": [
+            247,
+            248,
+            251,
+            1
+          ]
+        },
+        {
+          "label": "译文",
+          "ratio": 7.94,
+          "fg": [
+            36,
+            69,
+            168,
+            1
+          ],
+          "bg": [
+            247,
+            248,
+            251,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "name": "T-dark 主题生效并保存",
+      "data": "PASS"
+    },
+    {
+      "name": "T-dark 普通文字对比度全部 ≥4.5:1",
+      "data": "PASS"
+    },
+    {
+      "name": "T-dark-contrast",
+      "data": [
+        {
+          "label": "主标题",
+          "ratio": 15.78,
+          "fg": [
+            242,
+            245,
+            250,
+            1
+          ],
+          "bg": [
+            22,
+            27,
+            37,
+            1
+          ]
+        },
+        {
+          "label": "状态行",
+          "ratio": 9.62,
+          "fg": [
+            185,
+            194,
+            210,
+            1
+          ],
+          "bg": [
+            22,
+            27,
+            37,
+            1
+          ]
+        },
+        {
+          "label": "原文",
+          "ratio": 15.78,
+          "fg": [
+            242,
+            245,
+            250,
+            1
+          ],
+          "bg": [
+            22,
+            27,
+            37,
+            1
+          ]
+        },
+        {
+          "label": "译文",
+          "ratio": 9.3,
+          "fg": [
+            169,
+            188,
+            255,
+            1
+          ],
+          "bg": [
+            22,
+            27,
+            37,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "name": "T-warm 主题生效并保存",
+      "data": "PASS"
+    },
+    {
+      "name": "T-warm 普通文字对比度全部 ≥4.5:1",
+      "data": "PASS"
+    },
+    {
+      "name": "T-warm-contrast",
+      "data": [
+        {
+          "label": "主标题",
+          "ratio": 11.95,
+          "fg": [
+            51,
+            44,
+            33,
+            1
+          ],
+          "bg": [
+            246,
+            238,
+            221,
+            1
+          ]
+        },
+        {
+          "label": "状态行",
+          "ratio": 6.16,
+          "fg": [
+            97,
+            87,
+            68,
+            1
+          ],
+          "bg": [
+            246,
+            238,
+            221,
+            1
+          ]
+        },
+        {
+          "label": "原文",
+          "ratio": 11.95,
+          "fg": [
+            51,
+            44,
+            33,
+            1
+          ],
+          "bg": [
+            246,
+            238,
+            221,
+            1
+          ]
+        },
+        {
+          "label": "译文",
+          "ratio": 6.88,
+          "fg": [
+            122,
+            67,
+            24,
+            1
+          ],
+          "bg": [
+            246,
+            238,
+            221,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "name": "T4 切主题不清空当前输入",
+      "data": "PASS"
+    },
+    {
+      "name": "T5 刷新后主题选择保持",
+      "data": "PASS"
+    },
+    {
+      "name": "T6 跟随系统随偏好切换",
+      "data": "PASS"
+    },
+    {
+      "name": "A1 200% 放大 + 360px 窄屏下翻译按钮与导航仍可用",
+      "data": "PASS"
+    },
+    {
+      "name": "A2 无严重横向溢出",
+      "data": "PASS"
+    },
+    {
+      "name": "F1 字幕入口带上了原文供预览",
+      "data": "PASS"
+    },
+    {
+      "name": "F2 默认不附带上下文",
+      "data": "PASS"
+    },
+    {
+      "name": "F3 空白时提交被禁用",
+      "data": "PASS"
+    },
+    {
+      "name": "F4 已输入字数与剩余字数正确",
+      "data": "PASS"
+    },
+    {
+      "name": "F5 超过 1000 字符被拦下",
+      "data": "PASS"
+    },
+    {
+      "name": "F6 断网提交失败后用户输入的字还在",
+      "data": "PASS"
+    },
+    {
+      "name": "F7 失败有明确提示",
+      "data": "PASS"
+    },
+    {
+      "name": "F8 提交成功返回反馈编号",
+      "data": "PASS"
+    },
+    {
+      "name": "F9 状态是「已收到」，没有假显示「已修复」",
+      "data": "PASS"
+    },
+    {
+      "name": "F10 返回一次性查询凭证",
+      "data": "PASS"
+    },
+    {
+      "name": "F11 查询返回与提交一致的状态",
+      "data": "PASS"
+    },
+    {
+      "name": "F12 凭证不对时不显示反馈内容",
+      "data": "PASS"
+    },
+    {
+      "name": "F-receipt",
+      "data": {
+        "ticket": "FB-20261109-1BA25E",
+        "status": "已收到"
+      }
+    },
+    {
+      "name": "预期的失败路径日志",
+      "data": [
+        "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+        "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+      ]
+    },
+    {
+      "name": "console 无意外错误",
+      "data": "PASS"
+    }
+  ],
+  "failures": [],
+  "consoleErrors": [
+    "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+    "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+  ]
+}
