@@ -1558,7 +1558,17 @@ export function enrichDraft(
   // 提示永远以「这句原文」为输入重算，模型给的只在通过校验时才采用。
   const plan = buildHintPlan(english, language, hintSystem);
   const modelHint = (draft.readingHint ?? draft.chinesePronunciation ?? '').trim();
-  const usePlan = !modelHint || hintLooksWrong(modelHint, english, language, hintSystem);
+  let usePlan = !modelHint || hintLooksWrong(modelHint, english, language, hintSystem);
+  /*
+   * 数字近音最后一道兜底：模型给的一行提示哪怕字系正确、重合度够高，
+   * 也可能把金额/时间等数字原样写成裸 450/540（模型自带的近音绕过了
+   * 本地规则）。只要英文正文里有数字、而这行提示里没有对应的汉字读音，
+   * 就必须回退到本地 plan —— 本地对数字走 soundForNumberToken，绝不裸写。
+   */
+  if (!usePlan && language === 'English' && hintSystem === 'hanzi' && /\d/.test(english)) {
+    const missing = missingNumberHints(english, modelHint);
+    if (missing.length > 0) usePlan = true;
+  }
   const readingHint = !english ? '' : usePlan ? plan.text : modelHint;
   /*
    * 类型要显式写：这里的返回值会被直接当成 ReplyDraft 用，

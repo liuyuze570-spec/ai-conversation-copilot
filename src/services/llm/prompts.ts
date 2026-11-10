@@ -316,6 +316,18 @@ function systemPrompt(request: ReplyRequest): string {
     request.level,
   );
 
+  /*
+   * 忠实转译（from-chinese）与一般聊天的 continue 卡含义不同。
+   *
+   * 一般聊天里 continue 卡是「回答 + 追问一句、让对话继续」；但忠实转译
+   * 要求三张卡都只表达用户原话的**那个意思**，continue 卡绝不能新增追问
+   * （实测 7B 模型在 continue 卡里加了原文没有的 `When will you be here?`）。
+   * 这里把 continue 卡的说明按模式改写，让系统层规则不再与任务约束打架。
+   */
+  const continueRule = request.mode === 'from-chinese'
+    ? `- "continue": another faithful way to say the SAME meaning (different wording only).`
+    : `- "continue": answers AND keeps the conversation alive with a short follow-up question.${scenario === 'exam' ? ' (extends the topic in exam-appropriate language)' : scenario === 'video' ? ' (a thought to continue the video, no question to the speaker)' : ''}`;
+
   return `You are a real-time spoken-${target} copilot for a ${levelName} learner.
 The learner UNDERSTANDS ${meaningName} but wants to SPEAK ${target}.
 
@@ -363,7 +375,7 @@ STRICT JSON RULES (a broken JSON means the user gets no reply at all)
 
 - "simple": easiest to say.${scenario === 'exam' ? ' (key point of the listening)' : scenario === 'video' ? ' (short spontaneous reaction)' : ''}
 - "natural": how a native speaker would casually say it.${scenario === 'exam' ? ' (model answer for a candidate)' : scenario === 'video' ? ' (natural comment on what was said)' : ''}
-- "continue": answers AND keeps the conversation alive with a short follow-up question.${scenario === 'exam' ? ' (extends the topic in exam-appropriate language)' : scenario === 'video' ? ' (a thought to continue the video, no question to the speaker)' : ''}
+${continueRule}
 - "english": the reply in ${target}. Every entry MUST have one.
 - "meaning": a natural, colloquial translation of "english" into ${meaningName}
   (口语化, NOT word by word). This is what the user reads to understand what they are about to say.

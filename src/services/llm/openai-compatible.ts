@@ -4,6 +4,7 @@ import { enrichDrafts } from '../pronunciation';
 import { errorDetailFromText, requestJson, type RequestOptions } from './http';
 import { parseReplyDrafts, dropWrongLanguageDrafts } from './reply-parse';
 import { checkDomesticURL, normalizeBaseURL } from '../../shared/providers';
+import { checkTranslationFidelity } from '../../shared/facts';
 
 export interface OpenAICompatibleConfig {
   apiKey: string;
@@ -197,9 +198,27 @@ export class OpenAICompatibleLLM implements LLMProvider {
       // （不在这里打日志，避免把模型返回的正文写进日志。）
     }
 
+    /*
+     * 忠实转译的第二道闸：金额 / 币种 / 星期 / 数字保真。
+     *
+     * 语言字系过滤只保证「英文卡里没有中文」，保证不了「英文卡里的金额、
+     * 日期和用户原话一致」。用户输入「不是540欧元、周五」时，模型可能把
+     * 540 写成肯定金额、把周五写成 Thursday —— 这些字系都对、事实却错了。
+     * 这里拿用户原话逐条核对，不忠实的卡整条丢掉。
+     */
+    let faithful = kept;
+    if (request.mode === 'from-chinese' && request.chinese?.trim()) {
+      faithful = kept.filter(
+        (draft) => checkTranslationFidelity(request.chinese ?? '', draft.english).ok,
+      );
+      if (!faithful.length) {
+        throw new Error('LLM_UNFAITHFUL');
+      }
+    }
+
     // 提示体系跟着设置走：日语读者要片假名，别给他汉字近音。
     return enrichDrafts(
-      kept,
+      faithful,
       request.language ?? 'English',
       request.hintSystem ?? 'hanzi',
     );

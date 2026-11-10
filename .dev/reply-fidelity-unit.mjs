@@ -22,7 +22,9 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
 const { replyInWrongLanguage, dropWrongLanguageDrafts } = require('../dist/services/llm/reply-parse.js');
-const { buildHintPlan } = require('../dist/services/pronunciation.js');
+const { buildHintPlan, enrichDraft, missingNumberHints } = require('../dist/services/pronunciation.js');
+const { buildReplyMessages } = require('../dist/services/llm/prompts.js');
+const { checkTranslationFidelity } = require('../dist/shared/facts.js');
 
 let pass = 0;
 let fail = 0;
@@ -95,6 +97,70 @@ eq(replyInWrongLanguage('This is not Japanese', 'Japanese'), true,
   eq(four?.hint, '佛', 'B 4:20 的 4 读成「佛」');
   eq(twenty?.hint, '特温提', 'B 4:20 的 20 读成「特温提」');
   ok(plan.text.includes('佛 特温提'), `B 4:20 整句近音里有「佛 特温提」（${plan.text}）`);
+}
+
+// ---- C. from-chinese 忠实转译：continue 卡不得新增追问 ----
+{
+  const msgs = buildReplyMessages({
+    mode: 'from-chinese',
+    language: 'English',
+    comprehension: 'Chinese',
+    hintSystem: 'hanzi',
+    context: '',
+    chinese: '请确认定金是450欧元，不是540欧元，余款周五支付。',
+  });
+  const sys = msgs.find((m) => m.role === 'system')?.content ?? '';
+  const user = msgs.find((m) => m.role === 'user')?.content ?? '';
+  // 系统层的 continue 卡规则必须被改写：不再要求 follow-up question。
+  ok(!/answers AND keeps the conversation alive with a short follow-up question/.test(sys),
+    'C from-chinese 系统提示里 continue 卡不再要求追问');
+  // 任务层仍然强调「不加追问、不新增信息」。
+  ok(/do NOT add any new question/.test(user), 'C 任务提示保留「不加新问题」约束');
+  ok(/FAITHFUL translation/.test(user), 'C 任务提示明确是忠实转译');
+}
+
+// ---- D. 数字近音最终兜底：模型自带近音漏掉裸数字必须回退本地规则 ----
+{
+  // 模型返回一行「看似合法」的近音，但把 450 / 540 写成了裸数字。
+  const draft = {
+    kind: 'simple',
+    english: 'Please confirm the deposit is 450 euros, not 540 euros.',
+    chinese: '请确认定金是450欧元，不是540欧元。',
+    readingHint: '普利兹 康佛姆 450 尤若 诺特 540 尤若',
+  };
+  const enriched = enrichDraft(draft, 'English', 'hanzi');
+  ok(!/\b450\b/.test(enriched.readingHint ?? ''), 'D 模型裸 450 被替换成汉字读音');
+  ok(!/\b540\b/.test(enriched.readingHint ?? ''), 'D 模型裸 540 被替换成汉字读音');
+  ok(/[\u4e00-\u9fff]/.test(enriched.readingHint ?? ''), 'D 最终近音是汉字');
+  // missingNumberHints 本身：漏掉 450/540 时能点名。
+  const missing = missingNumberHints('450 euros, not 540', '普利兹 康佛姆 450 尤若 诺特 540');
+  eq(missing.length, 2, 'D missingNumberHints 点名 450 和 540');
+}
+
+// ---- E. 中文转外语忠实度：金额/币种/星期/数字/否定 ----
+{
+  // 正确译文：450 欧元、否定 540、周五，全部忠实。
+  const good = checkTranslationFidelity(
+    '请确认定金是450欧元，不是540欧元，余款周五支付。',
+    'Please confirm the deposit is 450 euros, not 540 euros, and the balance is due Friday.',
+  );
+  ok(good.ok, `E 忠实译文通过（issues=${good.issues}）`);
+
+  // 币种被换：欧元 → 美元。
+  ok(!checkTranslationFidelity('定金450欧元', 'the deposit is 450 dollars').ok,
+    'E 欧元被换成美元 → 不忠实');
+  // 星期被换：周五 → Thursday。
+  ok(!checkTranslationFidelity('余款周五支付', 'the balance is due Thursday').ok,
+    'E 周五被换成 Thursday → 不忠实');
+  // 凭空多出原话没有的数字。
+  ok(!checkTranslationFidelity('定金是450欧元', 'the deposit is 450 euros, or maybe 700').ok,
+    'E 凭空多出 700 → 不忠实');
+  // 被否定的 540 被写成肯定金额。
+  ok(!checkTranslationFidelity('定金是450欧元，不是540欧元', 'the deposit is 540 euros').ok,
+    'E 被否定的 540 被写成肯定 → 不忠实');
+  // 否定 540 保留（译文里也否定 540）→ 忠实。
+  ok(checkTranslationFidelity('定金是450欧元，不是540欧元', 'the deposit is 450 euros, not 540 euros').ok,
+    'E 译文保留「不是540」→ 忠实');
 }
 
 console.log(`reply-fidelity: ${pass} 通过 / ${fail} 失败`);

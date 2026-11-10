@@ -201,9 +201,24 @@ export function ReplyCard({
           ) : null}
 
           {pronunciation.ipa && suggestion.ipa ? (
-            <p data-pron-ipa className="mt-[3px] font-mono text-[10.5px] text-white/30">
-              {suggestion.ipa}
-            </p>
+            <div className="mt-[3px] flex items-baseline gap-1.5">
+              <p data-pron-ipa className="font-mono text-[10.5px] text-white/30">
+                {suggestion.ipa}
+              </p>
+              {/*
+                * 模型给的 IPA 没有可靠的逐词核验来源，`ipaLooksWrong` 只是
+                * 外形过滤（拦掉中文拼音 / 抄原文 / 编符号），拦不住「外形像
+                * 音标、发音其实不对」的。这里显式标「未核对」，绝不冒充标准
+                * 音标 —— 用户想开口，仍以汉字近音 + 手动朗读为准。
+                */}
+              <span
+                data-pron-ipa-unverified
+                className="shrink-0 text-[9.5px] text-white/30"
+                title="这是模型生成的近似音标，未逐词核对，仅供参考；想开口以汉字近音和手动朗读为准。"
+              >
+                未核对
+              </span>
+            </div>
           ) : null}
         </div>
       )}

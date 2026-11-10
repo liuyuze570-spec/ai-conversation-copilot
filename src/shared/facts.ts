@@ -1785,6 +1785,74 @@ export function introducesNewNumbers(sentence: string, factsText: string): boole
 }
 
 /**
+ * 「中文转外语」忠实度的最后一道闸：译文的金额 / 币种 / 星期 / 数字必须
+ * 和用户的原话一致。
+ *
+ * 背景（任务四.2）：用户输入「请确认定金是450欧元，不是540欧元，余款周五支付」，
+ * 7B 模型可能把「不是540」译成肯定的 "540 euros"、把「周五」译成 "Thursday"。
+ * 语言字系过滤（dropWrongLanguageDrafts）只能拦「整句是中文」，拦不住这种
+ * 字系正确、事实却错了的译文。这里逐项核对，任一不忠就整条卡不要。
+ *
+ * 核对项：
+ *   - `currency`：原话有币种（欧元/美元…）时，译文不能换成别的币种；
+ *   - `weekday`：原话只有一个星期（周五）时，译文不能出现不同的星期；
+ *   - `number`：译文不能凭空出现原话里根本没有的数字（防编造）；
+ *   - `negation`：原话明确否定的值（「不是540」），译文不能把它当成肯定值。
+ *
+ * 只报「错」，不做修正 —— 宁可少一张卡，也不把错的事实交给用户念出去。
+ */
+export function checkTranslationFidelity(
+  original: string,
+  translation: string,
+): { ok: boolean; issues: string[] } {
+  const issues: string[] = [];
+
+  // 币种：原话说了欧元，译文就不能说美元。
+  const origCurrency = currencyOf(original);
+  const transCurrency = currencyOf(translation);
+  if (origCurrency && transCurrency && transCurrency !== origCurrency) {
+    issues.push('currency');
+  }
+
+  // 星期：原话只有一个星期时，译文里出现的星期必须和它一致。
+  const origDays = weekdaysIn(original);
+  const transDays = weekdaysIn(translation);
+  if (origDays.length === 1 && transDays.length && !transDays.includes(origDays[0])) {
+    issues.push('weekday');
+  }
+
+  // 数字：译文不能冒出原话里根本不存在的数字。
+  const origNums = new Set(valueNumbers(original));
+  for (const number of valueNumbers(translation)) {
+    if (!origNums.has(number)) {
+      issues.push('number');
+      break;
+    }
+  }
+
+  // 否定：原话「不是540」里的 540 是作废旧值，译文不能把它写成肯定金额。
+  const origFacts = extractFactsWithRules({ originalText: original });
+  const negatedNums = new Set<number>();
+  for (const fact of origFacts) {
+    if (fact.negated) for (const number of valueNumbers(fact.value)) negatedNums.add(number);
+  }
+  if (negatedNums.size) {
+    const transFacts = extractFactsWithRules({ originalText: translation });
+    outer: for (const fact of transFacts) {
+      if (fact.negated) continue;
+      for (const number of valueNumbers(fact.value)) {
+        if (negatedNums.has(number)) {
+          issues.push('negation');
+          break outer;
+        }
+      }
+    }
+  }
+
+  return { ok: issues.length === 0, issues };
+}
+
+/**
  * 选中若干事实 → 给模型看的一行行文本（顺序即用户看到的顺序）。
  *
  * 必须把**关系**一起给出去：只给两行「周二」「周四」，模型分不清哪个是
