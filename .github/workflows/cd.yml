@@ -35,13 +35,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: webapp/web/package-lock.json
 
       - name: 安装前端依赖
         run: npm ci
         working-directory: webapp/web
         env:
+          # lock 里曾混入 npmmirror 镜像；这里再显式钉到官方源，避免 CI 环境
+          # 的任何镜像配置把 npm ci 引到不可达的国内镜像。
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
 
       - name: 构建前端产物
