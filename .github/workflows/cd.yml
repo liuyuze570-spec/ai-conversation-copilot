@@ -1,0 +1,82 @@
+name: CD（构建镜像 + 冒烟测试）
+
+# 在 CI（测试）之后补「构建前端 → 构建镜像 → 容器内健康检查」这段 CD。
+#
+# 这一档只做「本地镜像 AWS 验证」能覆盖的部分，不碰真 AWS 账号：
+#   - CI 只证明「代码能测」，不证明「能打成镜像、能起服务」；
+#   - 本 job 在 GitHub Actions 自带的 Docker 上：先构建前端产物，再打「降级版」
+#     镜像（不含模型），容器里跑 /api/health 冒烟测试，是「可发布产物」的
+#     第一次真实证据；
+#   - 不 push ECR、不部署 ECS（需要 AWS 凭据，留到「在线 AWS」那一档）。
+#
+# 诚实边界：
+#   - 模型（faster-whisper-base + opus-mt-en-zh，约 200MB）不进 Git 仓库，所以
+#     CI 里构建的是「不含模型」的降级镜像，/api/health 返回 real.translate/transcribe
+#     = false（模型缺失的预期降级），只证明「依赖装得上、8 个模块拷得齐、起得来」。
+#   - 带模型的完整镜像要在本机（有模型）构建，见 webapp/deploy/README.md。
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'webapp/**'
+      - 'src/shared/**'
+      - '.github/workflows/cd.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-smoke:
+    name: 构建镜像 + 冒烟测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: webapp/web/package-lock.json
+
+      - name: 安装前端依赖
+        run: npm ci
+        working-directory: webapp/web
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+
+      - name: 构建前端产物
+        run: npm run build
+        working-directory: webapp/web
+
+      - name: 构建降级镜像（不含模型）
+        run: |
+          docker build -t copilot-web:cd-test \
+            -f webapp/deploy/Dockerfile.degraded \
+            webapp
+
+      - name: 起容器并等健康
+        run: |
+          docker run -d --name copilot-smoke -p 8000:8000 \
+            -e COPILOT_MT_MODEL_DIR=/nonexistent \
+            -e COPILOT_WHISPER_DIR=/nonexistent \
+            copilot-web:cd-test
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/api/health > /tmp/health.json; then break; fi
+            sleep 2
+          done
+          cat /tmp/health.json
+
+      - name: 校验冒烟结果
+        run: |
+          node -e '
+            const fs = require("fs");
+            const h = JSON.parse(fs.readFileSync("/tmp/health.json", "utf8"));
+            console.log("health.ok =", h.ok, "| version =", h.version,
+                        "| real.translate =", h.real?.translate,
+                        "| real.transcribe =", h.real?.transcribe);
+            if (h.ok !== true) { console.error("health.ok 不为 true"); process.exit(1); }
+          '
+
+      - name: 停容器
+        if: always()
+        run: docker rm -f copilot-smoke || true
