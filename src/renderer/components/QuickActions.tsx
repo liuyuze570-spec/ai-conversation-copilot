@@ -180,7 +180,12 @@ export function QuickActions({
       </div>
 
       {/* 高级层：默认收起。场景 / 语气 / 请求类动作 / 中文输入 / 示例对话都在这里。 */}
-      <div id="quick-actions-more" data-more-panel hidden={!more} className="space-y-2 pt-0.5">
+      <div
+        id="quick-actions-more"
+        data-more-panel
+        hidden={!more}
+        className="subtle-scroll max-h-[38vh] space-y-2 overflow-y-auto pt-0.5"
+      >
         {/*
           样例入口放在「更多」里而不是首页：它是给第一次用的人（和评委）
           亲手验证用的，不是日常高频动作。但不能藏进设置 —— 那等于没有。
