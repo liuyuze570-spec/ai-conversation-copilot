@@ -19,15 +19,14 @@ export function signalHealsStatus(
 /**
  * 识别**成功**之后，哪些状态应该被捞回 `listening`？
  *
- * 这是「识别失败一次，整场自动回复就废了」的正解。原来的自愈只覆盖
- * `no-audio`（靠 `reportedNoAudio` 标记），漏掉了 `error`：
+ * 现在识别失败（网络抖 / 额度不足 / 超时）**不再把设备状态写成 error**——
+ * 设备还在采集，状态一直保持 listening，识别失败只在字幕里留标记（见
+ * python-engine.ts 的 runTranscribe）。所以 `error` 只剩真正的设备级错误
+ * （fail()），那类错误不会有下一次成功来「自愈」，这里保留 error 分支只是
+ * 防御性的。
  *
- *   · 网络抖一下 → `runTranscribe` catch → status = 'error'
- *   · 下一句识别成功 → 只是正常写字幕，没人去改状态
- *   · renderer 的停顿看门狗门槛是 `listening | no-audio`（见 audio-status.ts）
- *   · 于是整场对话的「对方停顿就自动出回复」永久失效
- *
- * 一次成功请求本身就是「链路是活的」最硬的证据，所以 error 也该被它治好好。
+ * `no-audio` 仍需自愈：设备活着但暂时没收到声音，一次成功识别就是
+ * 「链路是活的」最硬的证据。
  * `paused` 不在此列 —— 那是用户主动停的，不能被一次识别结果推翻。
  */
 export function healsAfterSuccess(lastStatus: string): boolean {

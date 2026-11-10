@@ -81,6 +81,13 @@ const e = opened.epoch;
 eq(cs.isCurrentCaptureEpoch(opened, e), true, '当前代次回执接受');
 eq(cs.isCurrentCaptureEpoch(opened, e - 1), false, '旧代次回执拒绝');
 
+// ---- 识别失败不改变设备状态（0.6.4 核心修复）----
+// 识别超时 / 网络抖 / 额度不足时，设备还在采集，状态必须保持「采集中」，
+// 不能写成 error —— 否则停止入口消失、按钮变「开始采集」。
+eq(cs.sttFailureKeepsCapture(), 'listening', '识别失败时设备状态保持 listening，不是 error');
+eq(cs.isCaptureActive(cs.sttFailureKeepsCapture()), true, '识别失败后状态仍是采集中（可停止）');
+eq(cs.captureAction(cs.sttFailureKeepsCapture()), 'stop', '识别失败后按钮仍是「停止采集」');
+
 // ---- 切会话后「引擎重连」使 sessionId 同步 +1，新字幕继续进来 ----
 // 修复背景：渲染层 gateAfterSessionReset 把 floorSession 抬到 lastSeenSession+1，
 // 但音频引擎持续运行时 sessionId 不变，旧 sessionId 字幕会被永久挡住。

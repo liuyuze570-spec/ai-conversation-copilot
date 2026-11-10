@@ -195,3 +195,18 @@ export function acceptsTranscript(
 export function isCurrentCaptureEpoch(gate: CaptureGate, epoch: number): boolean {
   return gate.active && gate.epoch === epoch;
 }
+
+/**
+ * 识别失败（超时 / 网络 / 额度不足）时，设备采集状态应该是什么？
+ *
+ * 识别失败 ≠ 采集停止：设备还在收声音，只是这一句没转写出来。这时候
+ * 状态必须保持「采集中」——否则界面把按钮变成「开始采集」，用户一点就
+ * 又开一路，旧的采集链路却没释放。识别失败这件事由字幕标记（onDropped）
+ * 单独告知，不能污染设备状态。
+ *
+ * 返回 `listening`（而不是 `error`）：识别失败后设备依然活着，下一次成功
+ * 识别就能接着出字幕，无需用户重新开始。
+ */
+export function sttFailureKeepsCapture(): 'listening' {
+  return 'listening';
+}

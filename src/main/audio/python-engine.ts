@@ -16,6 +16,7 @@ import { getSTT, hasSttKey } from '../ai-service';
 import { describeAiError } from '../../shared/ai-errors';
 import { sttLanguageCode } from '../../shared/types';
 import { signalHealsStatus, healsAfterSuccess } from './status-heal';
+import { sttFailureKeepsCapture } from '../../shared/capture-state';
 import { computeThresholds, nextRecentPeak } from '../../shared/adaptive-vad';
 import { resolveSources } from '../../shared/sources';
 import {
@@ -956,10 +957,16 @@ class AudioStream {
        */
       if (timedOut()) {
         logger.error('Audio', `[${this.options.mode}] stt deadline exceeded`);
+        /*
+         * 识别超时 ≠ 采集停止：设备还在收声音，只是这一句没转写出来。
+         * 状态必须保持「采集中」，否则界面会把按钮变成「开始采集」，
+         * 用户一点就又开一路，旧的采集链路却没释放。识别失败这件事由
+         * 下面的 onDropped 在字幕里留标记，不再把设备状态写成 error。
+         */
         this.status(
-          'error',
+          sttFailureKeepsCapture(),
           `识别超时：${Math.round(TRANSCRIBE_DEADLINE_MS / 1000)} 秒没有返回。` +
-            '这一句已放弃，下一句会继续 —— 可以到「设置 → 性能」里看是网络还是模型慢。',
+            '这一句已放弃，采集仍在继续，下一句会接着转写 —— 可以到「设置 → 性能」里看是网络还是模型慢。',
         );
         // 整句真的没转写出来：字幕位置上要留一个「这里少了一句」的标记。
         if (!partial) {
@@ -974,7 +981,11 @@ class AudioStream {
       // 统一走「人话翻译」：告诉用户哪里错了 + 怎么改。
       const info = describeAiError(error);
       logger.error('Audio', `[${this.options.mode}] stt failed: ${info.code}`);
-      this.status('error', `识别失败：${info.title}｜${info.hint}`);
+      /*
+       * 同上：识别失败（网络抖 / 额度不足）时设备仍活着，状态保持「采集中」，
+       * 不能写成 error —— 否则停止入口消失、按钮变「开始采集」。
+       */
+      this.status(sttFailureKeepsCapture(), `识别失败：${info.title}｜${info.hint}｜采集仍在继续`);
       if (!partial) {
         this.options.onDropped?.({ at: Date.now(), reason: `这一句没有转写出来（${info.title}）` });
       }
