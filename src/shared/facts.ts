@@ -221,16 +221,19 @@ const EN_SPOKEN_TIME_WORD =
   '(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[-\\s](?:one|two|three|four|five|six|seven|eight|nine))?';
 
 const TIME_PATTERNS: RegExp[] = [
-  /\b\d{1,2}[:：]\d{2}\b/g,
+  /\b\d{1,2}[:：]\s*\d{2}\b/g,
   // 「3 p.m.」「10:30 a.m.」带点的那种写法：只写 am|pm 会漏掉一多半英文口语转写。
   /*
    * 分隔符要收 `.`：语音识别的输出常把 10:30 写成 `10.30am`、`4.15pm`
    * （Whisper 实测就是这样）。旧写法只认 `:`，于是 `10.30am` 被切成
    * `30am` —— 卡片上写着「时间 30am」，比没有还糟。
+   * 冒号后允许有界空格：`4: 20 p.m.` 也要整段认成时间，不能漏成 4 和 20。
    */
-  /\b\d{1,2}(?:[:：.]\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)\b/gi,
+  /\b\d{1,2}(?:[:：.]\s*\d{2})?\s*(?:a\.m\.|p\.m\.|a\.m|p\.m|am|pm)(?![a-z])/gi,
   /\b\d{1,2}\s*(?:am|pm)\b/gi,
   /(?:上午|下午|早上|晚上|中午|凌晨)?[一二三四五六七八九十两\d]{1,3}点(?:半|[一二三四五六七八九十\d]{1,2}分)?/g,
+  // 中文时段词 + 冒号时刻：`下午4:20` / `下午4: 20`，把「下午」作用到冒号写法上。
+  /(?:上午|下午|早上|晚上|中午|凌晨)\s*\d{1,2}[:：]\s*\d{1,2}\b/g,
   /\b\d{1,2}時(?:半|\d{1,2}分)?/g,
   /\b\d{1,2}시(?:\s*\d{1,2}분)?/g,
   /*
@@ -241,7 +244,7 @@ const TIME_PATTERNS: RegExp[] = [
    */
   new RegExp(`\\b${EN_SPOKEN_TIME_WORD}\\s+(?:oh\\s+)?${EN_SPOKEN_TIME_WORD}\\s+(?:in\\s+the\\s+)?(?:morning|afternoon|evening|night)\\b`, 'gi'),
   // 数字时间 + 时段词：`4.20 in the afternoon` / `10:30 in the morning`。
-  /\b\d{1,2}(?:[:：.]\d{2})\s+(?:in\s+the\s+)?(?:morning|afternoon|evening|night)\b/gi,
+  /\b\d{1,2}(?:[:：.]\s*\d{2})\s+(?:in\s+the\s+)?(?:morning|afternoon|evening|night)\b/gi,
 ];
 
 /**
@@ -339,10 +342,10 @@ const MONEY_PATTERNS: RegExp[] = [
   /\b\d{1,3}(?:[\s\u00A0\u202F]\d{3})+(?:\.\d+)?\b/g,
 ];
 
-/** 数量（不含金额）：个 / 份 / people / pages… */
+/** 数量（不含金额）：个 / 份 / people / pages / words… */
 const QUANTITY_PATTERNS: RegExp[] = [
-  /\d[\d,]*\s*(?:个|份|件|张|本|人|台|套|箱)/g,
-  /\b\d[\d,]*\s*(?:people|persons?|copies|pages?|items?|boxes|copies)\b/gi,
+  /\d[\d,]*\s*(?:个|份|件|张|本|人|台|套|箱|字|词)/g,
+  /\b\d[\d,]*\s*(?:people|persons?|copies|pages?|items?|boxes|words|characters|chapters)\b/gi,
   /\d[\d,]*\s*(?:명|개|장|권)/g,
 ];
 
@@ -357,6 +360,23 @@ const QUANTITY_PATTERNS: RegExp[] = [
  */
 const NEGATION_BEFORE =
   /(?:\bnot\b|\bno longer\b|\bisn't\b|\baren't\b|不是|不用|不在)[^.!?。！？；;，,、]{0,16}$/i;
+
+/**
+ * 「无需 / 不必」模态否定。
+ *
+ * `You do not need to submit the essay on Tuesday` 里的 not 离 Tuesday 隔着一整
+ * 段谓语（do not need to submit the essay on），紧邻规则够不着，于是 Tuesday
+ * 被当成肯定的当前截止日默认放进确认句。这类「否定必要性」的否定作用域是
+ * **整个动作**（到分句结束），不是只作用到下一个词。
+ *
+ * 两点克制，和紧邻规则一致：
+ *  1. 不跨句号 / 分号 / 问号 / 感叹号 —— 「无需周二交。请在周四上传」里，
+ *     后半句的周四绝不能被前半句的「无需」带歪；
+ *  2. 只认「无需/不必」这类明确否定必要性的说法，不把「不是/不在」这种
+ *     紧邻否定拉长（那会跨句误伤）。
+ */
+const NO_NEED_BEFORE =
+  /(?:\bdo\s+not\s+(?:need|have)\s+to\b|\bdon't\s+(?:need|have)\s+to\b|\bdoes\s+not\s+(?:need|have)\s+to\b|\bdoesn't\s+(?:need|have)\s+to\b|\bno\s+need\s+to\b|\bnot\s+need\s+to\b|无需|不需要|不必|不用)/i;
 
 /**
  * 日语把否定放在值**后面**：「5万ではありません」。
@@ -381,6 +401,23 @@ export function isNegatedValue(text: string, value: string): boolean {
     if (NEGATION_BEFORE.test(before)) return true;
     const after = text.slice(index + value.length);
     if (NEGATION_AFTER.test(after)) return true;
+    /*
+     * 「无需 / 不必」模态否定：`do not need to submit … on Tuesday` 的否定
+     * 作用域是整段动作，值离否定词很远也要认。只看值前面**同一分句**内
+     * （截到上一个句号/分号/问号/感叹号），不跨句误伤后面的新安排。
+     */
+    const clauseStart = Math.max(
+      text.lastIndexOf('.', index - 1),
+      text.lastIndexOf('。', index - 1),
+      text.lastIndexOf('!', index - 1),
+      text.lastIndexOf('！', index - 1),
+      text.lastIndexOf('?', index - 1),
+      text.lastIndexOf('？', index - 1),
+      text.lastIndexOf(';', index - 1),
+      text.lastIndexOf('；', index - 1),
+    );
+    const clauseBefore = text.slice(clauseStart + 1, index);
+    if (NO_NEED_BEFORE.test(clauseBefore)) return true;
     from = index + needle.length;
   }
   return false;
@@ -784,6 +821,27 @@ function mergeBilingual(drafts: FactDraft[]): FactDraft[] {
         matchIndex = bucket.src.findIndex(
           (candidate, index) => !usedSrc.has(index) && numericKeyOf(candidate.value) === zhNum,
         );
+      }
+      /*
+       * 日期按**星期语义**配对（在否定/role fallback 之前）。
+       *
+       * `星期四下午` 与 `Tuesday` 都没有数值键，旧代码退回「否定状态一致
+       * 就配」，于是中文「星期四下午」硬配英文 Tuesday —— 中文卡上写
+       * 「星期四」、原话却引「Tuesday」，学生照卡核对会记反截止日。
+       * 星期有明确的封闭映射（周四=Thursday=day3），必须先用它精确对齐；
+       * 对不上（相对日期「明天」「下周三」这类）才退回否定/role/顺序兜底。
+       */
+      if (matchIndex < 0 && zh.kind === 'date') {
+        const zhDays = weekdaysIn(zh.value);
+        if (zhDays.length === 1) {
+          matchIndex = bucket.src.findIndex(
+            (candidate, index) => {
+              if (usedSrc.has(index)) return false;
+              const srcDays = weekdaysIn(candidate.value);
+              return srcDays.length === 1 && srcDays[0] === zhDays[0];
+            },
+          );
+        }
       }
       /*
        * 数值对不上（日期这类文字写法）时，先按「否定状态 + 改期位置」挑，
@@ -1331,6 +1389,26 @@ export function checkSentenceAgainstFacts(
   const requiredDays = new Set<number>();
   const staleDays = new Set<number>();
 
+  /*
+   * 源文与当前值的星期必须先自洽。
+   *
+   * 「value=星期四、sourceText=Tuesday」这种错配（中英按顺序硬配的产物），
+   * 星期语义不同却当作同一事实，照它生成确认句会把周二写成周四。这里在
+   * 抽取/对齐之后、生成之前再拦一道：两条都能读到星期、又不一致时，不能
+   * 作为可靠事实继续往下走。时间同理（下午4点 ≠ 凌晨4点）。
+   */
+  for (const fact of facts) {
+    if (fact.negated || fact.role === 'origin' || fact.edited) continue;
+    const srcDays = weekdaysIn(fact.sourceText ?? '');
+    const valDays = weekdaysIn(fact.value ?? '');
+    if (srcDays.length === 1 && valDays.length === 1 && srcDays[0] !== valDays[0]) {
+      return {
+        ok: false,
+        message: `「${fact.value}」和它的原话「${fact.sourceText}」星期对不上，请回到事实卡核对`,
+      };
+    }
+  }
+
   for (const fact of facts) {
     if (fact.negated) continue;
     /*
@@ -1488,7 +1566,19 @@ function englishSpokenValue(fact: ConfirmInput): string | null {
     '';
   if (digits) {
     const code = currencyOf(`${raw} ${src}`);
-    return code ? `${digits} ${CURRENCY_EN[code]}` : digits;
+    if (code) return `${digits} ${CURRENCY_EN[code]}`;
+    /*
+     * 数量单位要保留：`450 words` 不能变成裸 `450`（学生会误以为 450 字
+     * 还是 450 词，甚至当成 450 页）。单位从原话读；原话是 `450 words` 就
+     * 保留 `words`，中文展示值 `450个` 对应英文 `words` 时由调用方在上层
+     * 用 sourceText 判定 —— 这里只做「有明确英文单位就不丢」。
+     */
+    const unitMatch = src.match(/\d[\d,]*(?:\.\d+)?\s*([A-Za-z]+)/);
+    const unit = unitMatch?.[1]?.toLowerCase();
+    if (unit && /^(words?|characters?|pages?|people|copies|items?|chapters)$/.test(unit)) {
+      return `${digits} ${unit}`;
+    }
+    return digits;
   }
   const days = weekdaysIn(raw);
   if (days.length === 1) return WEEKDAY_EN[days[0]] ?? null;

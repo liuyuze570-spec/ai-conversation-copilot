@@ -337,7 +337,9 @@ export function scanTimes(text: string): { hits: TimeHit[]; spans: [number, numb
   // 1) 带 am/pm 的英文写法必须**先**匹配。
   //    否则 `10:30 a.m.` 先被纯时刻规则吃掉 `10:30`，残留一个 `a.m.`
   //    在中文确认句里（实测就是 `上午10点30分 a.m.`）。
-  const en = /(\d{1,2})(?:[:.](\d{2}))?\s*(a\.?m\.?|p\.?m\.?)(?![a-z])/gi;
+  //    冒号后允许有界空格：`4: 20 p.m.`（模型/输入常带空格）也要归成时间，
+  //    不能漏成两个裸数字 4 和 20。
+  const en = /(\d{1,2})(?:[:.]\s*(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)(?![a-z])/gi;
   let m: RegExpExecArray | null;
   while ((m = en.exec(text))) {
     let hour = Number(m[1]);
@@ -381,7 +383,7 @@ export function scanTimes(text: string): { hits: TimeHit[]; spans: [number, numb
    * ASR 把 4:20 p.m. 的点号写法丢了 am/pm，只留 in the afternoon。没有时段词
    * 的裸 `4.20` 绝不擅自 +12，交给规则 3 标 ambiguous（不写成「凌晨4点20分」）。
    */
-  const clockWithPart = /(\d{1,2})(?:[:：.](\d{2}))\s+(?:(?:in\s+the|at)\s+)?(morning|afternoon|evening|night)\b/gi;
+  const clockWithPart = /(\d{1,2})(?:[:：.]\s*(\d{2}))\s+(?:(?:in\s+the|at)\s+)?(morning|afternoon|evening|night)\b/gi;
   while ((m = clockWithPart.exec(text))) {
     if (spans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
     let hour = Number(m[1]);
@@ -414,8 +416,27 @@ export function scanTimes(text: string): { hits: TimeHit[]; spans: [number, numb
     push(hour, minute, m[0], m.index);
   }
 
+  // 2b) 中文时段词 + 冒号时刻：`下午4: 20` / `下午4:20` / `晚上10: 30`。
+  //     中文的「下午」修饰的是**冒号写法**的时刻，不是「点/时」写法。
+  //     `下午4点20分` 已被规则 2 吃掉；这里专接冒号（含全角）写法的时刻，
+  //     冒号后允许有界空格（`4: 20`），把「下午 4:20」归成 16:20，
+  //     而不是让 4 和 20 漏成两个裸数字。时段词只作用于紧邻的局部时刻，
+  //     不因全文出现「下午」就给所有时刻 +12。
+  const zhClock = /(上午|早上|早晨|凌晨|中午|下午|晚上|傍晚)\s*(\d{1,2})[:：]\s*(\d{1,2})(?!\d)/g;
+  while ((m = zhClock.exec(text))) {
+    if (spans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
+    let hour = Number(m[2]);
+    const minute = Number(m[3]);
+    if (hour > 24 || minute > 59) continue;
+    const mark = m[1];
+    if ((mark === '下午' || mark === '晚上' || mark === '傍晚') && hour < 12) hour += 12;
+    if (mark === '中午' && hour < 12) hour = 12;
+    if ((mark === '凌晨' || mark === '早上' || mark === '早晨' || mark === '上午') && hour === 12) hour = 0;
+    push(hour, minute, m[0], m.index);
+  }
+
   // 3) 裸 24 小时制 `14:30` / `14.30`（兜底，先让带 am/pm / 时段词的写法拿走）
-  const hm = /(\d{1,2})[:：.](\d{2})(?!\d)/g;
+  const hm = /(\d{1,2})[:：.]\s*(\d{2})(?!\d)/g;
   const hasPartOfDay = /\b(?:a|p)\.?m\.?|morning|afternoon|evening|night|上午|下午|凌晨|晚上|中午/i.test(text);
   while ((m = hm.exec(text))) {
     if (spans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
