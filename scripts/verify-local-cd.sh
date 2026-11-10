@@ -18,8 +18,16 @@ say "前置检查：docker 可用"
 if docker info >/dev/null 2>&1; then ok "docker 守护进程就绪"; else bad "docker 守护进程未运行，先启动 Docker Desktop"; exit 1; fi
 
 say "1. 构建前端产物"
+# 旧 dist 存在不能冒充本次构建成功：先删掉再 build，退出码非零即失败。
+rm -rf webapp/web/dist
 ( cd webapp/web && npm run build >/dev/null 2>&1 )
-if [ -f webapp/web/dist/index.html ]; then ok "前端产物已生成"; else bad "前端构建失败"; exit 1; fi
+BUILD_RC=$?
+if [ "$BUILD_RC" -eq 0 ] && [ -f webapp/web/dist/index.html ]; then
+  ok "前端构建成功（本次产物，非旧 dist）"
+else
+  bad "前端构建失败（退出码 $BUILD_RC，或产物未生成）"
+  exit 1
+fi
 
 say "2. 构建镜像（降级版，CI 同等路径；本机有模型可改用 Dockerfile）"
 if [ -d webapp/server/models/faster-whisper-base ] && [ -d webapp/mt/models/Xenova/opus-mt-en-zh ]; then
@@ -74,10 +82,17 @@ if [ "$RESP" = "200" ]; then
   FBJSON="$(cat /tmp/cd-fb.json 2>/dev/null)"
   TICKET="$(printf '%s' "$FBJSON" | grep -o '"ticket"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"ticket"[[:space:]]*:[[:space:]]*"//; s/"$//')"
   TOKEN="$(printf '%s' "$FBJSON" | grep -o '"token"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"token"[[:space:]]*:[[:space:]]*"//; s/"$//')"
-  if [ -n "$TICKET" ]; then ok "反馈已写入，编号 $TICKET"; else ok "反馈接口 200（编号未解析，跳过持久化断言）"; fi
+  if [ -n "$TICKET" ] && [ -n "$TOKEN" ]; then
+    ok "反馈已写入，编号 $TICKET"
+  else
+    # 反馈接口 200 但拿不到编号/凭证 = 契约没兑现，不能当通过。
+    bad "反馈接口 200 但未返回编号/查询凭证（见 /tmp/cd-fb.json）"
+  fi
 else
-  echo "  （反馈接口返回 $RESP，见 /tmp/cd-fb.json，跳过持久化断言）"
+  # 反馈失败是必需步骤：如实标 FAIL，不跳过、不显示全绿。
+  bad "反馈提交失败（HTTP $RESP，见 /tmp/cd-fb.json）"
   TICKET=""
+  TOKEN=""
 fi
 
 say "6. 重启容器"
@@ -88,9 +103,10 @@ if curl -sf "$BASE/api/health" >/dev/null 2>&1; then ok "重启后 health 仍 20
 say "7. 验证反馈跨重启仍在"
 if [ -n "$TICKET" ] && [ -n "$TOKEN" ]; then
   QRESP=$(curl -s -o /tmp/cd-q.json -w "%{http_code}" "$BASE/api/feedback/$TICKET" -H "x-feedback-token: $TOKEN")
-  if [ "$QRESP" = "200" ]; then ok "反馈编号 $TICKET 重启后仍可查"; else bad "反馈查询返回 $QRESP（可能查询接口路径/凭证不同）"; fi
+  if [ "$QRESP" = "200" ]; then ok "反馈编号 $TICKET 重启后仍可查"; else bad "反馈查询返回 $QRESP（跨重启持久化未通过）"; fi
 else
-  echo "  （无编号，跳过）"
+  # 上一步没拿到编号/凭证，这一步无法断言 → 如实标 FAIL，不跳过。
+  bad "无反馈编号/凭证，跨重启持久化无法验证"
 fi
 
 say "收尾：停容器"
