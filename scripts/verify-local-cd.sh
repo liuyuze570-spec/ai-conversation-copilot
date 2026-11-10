@@ -50,33 +50,33 @@ for i in $(seq 1 30); do
 done
 if [ "$READY" = 1 ]; then
   ok "health 200"
-  node -e '
-    const h=require("/tmp/cd-health.json");
-    console.log("      version =", h.version, "| real.translate =", h.real?.translate, "| real.transcribe =", h.real?.transcribe);
-    if (h.ok !== true) process.exit(1);
-  ' && ok "health.ok = true" || bad "health.ok 不为 true"
+  # 纯 bash 解析，避开 Windows 下 python/node 读不到 Git Bash /tmp 的路径隔离
+  HJSON="$(cat /tmp/cd-health.json 2>/dev/null)"
+  HVERSION="$(printf '%s' "$HJSON" | grep -o '"version"[^,]*' | head -1)"
+  HTRANS="$(printf '%s' "$HJSON" | grep -o '"translate"[^,}]*' | head -1)"
+  HWHIS="$(printf '%s' "$HJSON" | grep -o '"transcribe"[^,}]*' | head -1)"
+  echo "      $HVERSION | real.$HTRANS | real.$HWHIS"
+  if printf '%s' "$HJSON" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then ok "health.ok = true"; else bad "health.ok 不为 true"; fi
 else
   bad "health 超时未通过"
 fi
 
 say "5. 建会话 + 提交一条反馈"
-SESSION=$(curl -sf -X POST "$BASE/api/session" | python -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
-if [ -z "$SESSION" ]; then
-  # 会话接口可能需要 header，退化为直接调 feedback 看是否 200
-  RESP=$(curl -s -o /tmp/cd-fb.json -w "%{http_code}" -X POST "$BASE/api/feedback" \
-    -H 'Content-Type: application/json' \
-    -d '{"category":"translate","where":"本地CD验证","suggestion":"验证反馈持久化"}')
-else
-  RESP=$(curl -s -o /tmp/cd-fb.json -w "%{http_code}" -X POST "$BASE/api/feedback" \
-    -H 'Content-Type: application/json' -H "X-Session-Id: $SESSION" \
-    -d '{"category":"translate","where":"本地CD验证","suggestion":"验证反馈持久化"}')
-fi
+SESSION="$(curl -sf -X POST "$BASE/api/session" | grep -o '"token"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"token"[[:space:]]*:[[:space:]]*"//; s/"$//')"
+HDR=()
+[ -n "$SESSION" ] && HDR=(-H "X-Session-Id: $SESSION")
+# 契约：category 必须是 recognition/translation/money_date/reply/pronunciation/operation/other 之一；
+# where_wrong 与 suggestion 至少一个非空，否则 400 FEEDBACK_EMPTY。返回 {ok,ticket,token}。
+RESP=$(curl -s -o /tmp/cd-fb.json -w "%{http_code}" -X POST "$BASE/api/feedback" \
+  -H 'Content-Type: application/json' "${HDR[@]}" \
+  -d '{"category":"translation","where_wrong":"本地CD验证","suggestion":"验证反馈跨重启持久化"}')
 if [ "$RESP" = "200" ]; then
-  TICKET=$(node -e 'try{console.log(require("/tmp/cd-fb.json").ticket||"")}catch(e){console.log("")}')
-  TOKEN=$(node -e 'try{console.log(require("/tmp/cd-fb.json").token||"")}catch(e){console.log("")}')
+  FBJSON="$(cat /tmp/cd-fb.json 2>/dev/null)"
+  TICKET="$(printf '%s' "$FBJSON" | grep -o '"ticket"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"ticket"[[:space:]]*:[[:space:]]*"//; s/"$//')"
+  TOKEN="$(printf '%s' "$FBJSON" | grep -o '"token"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"token"[[:space:]]*:[[:space:]]*"//; s/"$//')"
   if [ -n "$TICKET" ]; then ok "反馈已写入，编号 $TICKET"; else ok "反馈接口 200（编号未解析，跳过持久化断言）"; fi
 else
-  echo "  （反馈接口返回 $RESP，可能是配额/会话问题，跳过持久化断言，不影响镜像验证）"
+  echo "  （反馈接口返回 $RESP，见 /tmp/cd-fb.json，跳过持久化断言）"
   TICKET=""
 fi
 
