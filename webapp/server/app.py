@@ -52,8 +52,8 @@ from feedback_store import (
     char_count,
 )
 
-VERSION = "0.7.0-web.10"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
-BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web10-2026-11-09")
+VERSION = "0.7.0-web.11"  # 网页版独立版本号，与桌面 App 的 0.6.2 不是一个东西
+BUILD_ID = os.getenv("COPILOT_BUILD_ID", "web11-2026-11-10")
 # 每个进程一个短 ID：用来判「请求是不是被不同实例/重启后的进程接走的」。
 # 不含任何用户数据，可以安全地出现在 /api/health 里。
 BOOT_ID = secrets.token_hex(4)

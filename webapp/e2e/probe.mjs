@@ -97,27 +97,39 @@ ok(
   JSON.stringify(moneyRows.map((t) => t.slice(0, 46))),
 );
 
-/* 2. A− 同时缩原文与译文 ------------------------------------------------ */
+/* 2. A−/A+ 全局缩放原文、译文与回复卡英文 --------------------------------- */
+// 字号按钮在「设置」页，先切过去。
+await page.click('[data-testid="nav-settings"]');
+await page.waitForSelector('[data-testid="font-larger"]', { timeout: 5000 });
 const readFonts = () =>
   page.evaluate(() => ({
     original: parseFloat(getComputedStyle(document.querySelector('[data-testid="original-text"]')).fontSize),
     translation: parseFloat(getComputedStyle(document.querySelector('[data-testid="translation-text"]')).fontSize),
+    bodyScale: document.body.getAttribute('data-font-scale'),
   }));
 const before = await readFonts();
-await page.click('button[aria-label^="原文与译文整体调小"]');
+await page.click('[data-testid="font-smaller"]');
 const afterMinus = await readFonts();
-await page.click('button[aria-label^="原文与译文整体调大"]');
+await page.click('[data-testid="font-larger"]');
+await page.click('[data-testid="font-larger"]');
 const afterPlus = await readFonts();
 ok(
-  'A− 同时缩小两处',
+  'A− 全局缩小两处',
   afterMinus.original < before.original && afterMinus.translation < before.translation,
   `原文 ${before.original}→${afterMinus.original}，译文 ${before.translation}→${afterMinus.translation}`,
 );
 ok(
-  'A+ 同时放大两处',
+  'A+ 全局放大两处',
   afterPlus.original > afterMinus.original && afterPlus.translation > afterMinus.translation,
   `原文 ${afterMinus.original}→${afterPlus.original}，译文 ${afterMinus.translation}→${afterPlus.translation}`,
 );
+ok(
+  '缩放档位写进 body[data-font-scale]',
+  afterPlus.bodyScale !== '1' && afterPlus.bodyScale !== null,
+  `data-font-scale=${afterPlus.bodyScale}`,
+);
+// 回到字幕页，后续测试（事实行/确认卡）都在字幕页。
+await page.click('[data-testid="nav-captions"]');
 
 /* 3. 事实行名称可区分 ---------------------------------------------------- */
 const factNames = await page.evaluate(() =>
@@ -307,23 +319,17 @@ await page.evaluate(() => {
   btn?.click();
 });
 
-/* 10. 字号边界：连点 A+ / A−，不能超出 12–64 ------------------------------ */
-const plus = 'button[aria-label^="原文与译文整体调大"]';
-const minus = 'button[aria-label^="原文与译文整体调小"]';
+/* 10. 字号边界：连点 A+ / A−，缩放档位锁定在 0.85–1.6 -------------------- */
+await page.click('[data-testid="nav-settings"]');
+await page.waitForSelector('[data-testid="font-larger"]', { timeout: 5000 });
+const plus = '[data-testid="font-larger"]';
+const minus = '[data-testid="font-smaller"]';
 for (let i = 0; i < 20; i += 1) await page.click(plus);
-const maxFonts = await readFonts();
+const maxScale = await page.evaluate(() => document.body.getAttribute('data-font-scale'));
 for (let i = 0; i < 30; i += 1) await page.click(minus);
-const minFonts = await readFonts();
-ok(
-  '字号上限不越界（原文≤48 / 译文≤56）',
-  maxFonts.original <= 48 && maxFonts.translation <= 56,
-  JSON.stringify(maxFonts),
-);
-ok(
-  '字号下限不越界（≥12）',
-  minFonts.original >= 12 && minFonts.translation >= 12,
-  JSON.stringify(minFonts),
-);
+const minScale = await page.evaluate(() => document.body.getAttribute('data-font-scale'));
+ok('缩放上限不越界（≤1.6）', parseFloat(maxScale) <= 1.6, `max=${maxScale}`);
+ok('缩放下限不越界（≥0.85）', parseFloat(minScale) >= 0.85, `min=${minScale}`);
 // 回到默认档，避免影响后面的截图
 for (let i = 0; i < 8; i += 1) await page.click(plus);
 

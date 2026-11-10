@@ -99,8 +99,8 @@ export function App() {
   const [micState, setMicState] = useState<MicState>('idle');
   const [micError, setMicError] = useState<MicError | null>(null);
   const [fileNotice, setFileNotice] = useState<string | null>(null);
-  const [originalFont, setOriginalFont] = useState(24);
-  const [translationFont, setTranslationFont] = useState(28);
+  /** 全局字号缩放档位。A−/A+ 改它，CSS 变量 --font-scale 接管整页关键文字。 */
+  const [fontScale, setFontScale] = useState(1);
   const [highContrast, setHighContrast] = useState(false);
   const [tab, setTab] = useState<Tab>('captions');
   const [themePref, setThemePref] = useState<ThemePref>(() => readThemePref());
@@ -174,6 +174,12 @@ export function App() {
   useEffect(() => {
     document.body.classList.toggle('hc', highContrast);
   }, [highContrast]);
+
+  // 全局字号缩放：把档位写进 body[data-font-scale]，CSS 变量接管关键文字。
+  useEffect(() => {
+    const scale = fontScale === 1 ? '1' : String(fontScale);
+    document.body.dataset.fontScale = scale;
+  }, [fontScale]);
 
   /*
    * 主题只写 body 的属性，不重挂载任何组件 —— 切换时字幕、事实卡、
@@ -569,7 +575,7 @@ export function App() {
       </div>
 
       {state.original && (state.translation || state.translateMode === 'preset') ? (
-        <Section title="2 · 字幕" hint="原文在上，中文在下；顶部 A− / A+ 一起调两行">
+        <Section title="2 · 字幕" hint="原文在上，中文在下；设置里的 A− / A+ 整页一起缩放">
           <div className="flex flex-wrap items-center gap-2">
             {sourceBadge}
             {sttBadge}
@@ -616,14 +622,12 @@ export function App() {
           ) : null}
           <p
             className="mt-2 whitespace-pre-wrap font-medium leading-snug text-white"
-            style={{ fontSize: originalFont }}
             data-testid="original-text"
           >
             {state.original}
           </p>
           <p
             className="mt-2 whitespace-pre-wrap leading-snug text-accent-soft"
-            style={{ fontSize: translationFont }}
             data-testid="translation-text"
           >
             <TranslationText text={state.translation} check={state.numericCheck} />
@@ -684,7 +688,7 @@ export function App() {
                     {fact.label}
                   </span>
                   <span
-                    className={`text-[14px] font-medium ${
+                    className={`fact-value text-[14px] font-medium ${
                       fact.negated ? 'text-white/40 line-through' : 'text-white'
                     }`}
                   >
@@ -1016,24 +1020,22 @@ export function App() {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              aria-label={`原文与译文整体调小，当前原文 ${originalFont} 像素、译文 ${translationFont} 像素`}
+              aria-label={`整页文字整体调小，当前 ${Math.round(fontScale * 100)}%`}
               data-testid="font-smaller"
-              onClick={() => {
-                setOriginalFont((size) => Math.max(16, size - 2));
-                setTranslationFont((size) => Math.max(16, size - 2));
-              }}
+              onClick={() =>
+                setFontScale((scale) => Math.max(0.85, Math.round((scale - 0.15) * 100) / 100))
+              }
               className="rounded-lg border border-white/15 px-3 py-1.5 text-[12.5px] text-white/85"
             >
               A−
             </button>
             <button
               type="button"
-              aria-label={`原文与译文整体调大，当前原文 ${originalFont} 像素、译文 ${translationFont} 像素`}
+              aria-label={`整页文字整体调大，当前 ${Math.round(fontScale * 100)}%`}
               data-testid="font-larger"
-              onClick={() => {
-                setOriginalFont((size) => Math.min(48, size + 2));
-                setTranslationFont((size) => Math.min(56, size + 2));
-              }}
+              onClick={() =>
+                setFontScale((scale) => Math.min(1.6, Math.round((scale + 0.15) * 100) / 100))
+              }
               className="rounded-lg border border-white/15 px-3 py-1.5 text-[12.5px] text-white/85"
             >
               A+
